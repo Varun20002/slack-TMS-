@@ -1,0 +1,51 @@
+# Slack App Manifest — CoinDCX Webinar Ops Bot
+#
+# How to use:
+#   1. Go to https://api.slack.com/apps
+#   2. Click "Create New App" → "From an app manifest"
+#   3. Pick your workspace
+#   4. Paste this YAML and click through
+#   5. Install to workspace and copy the Bot Token + Signing Secret into .env.local
+#
+# Deployed at: https://internal-slack-bot-pi.vercel.app
+
+display_information:
+  name: Webinar Ops Bot
+  description: Internal tool for managing webinar request lifecycle
+  background_color: "#1a1a2e"
+
+features:
+  app_home:
+    home_tab_enabled: true
+    messages_tab_enabled: true
+  bot_user:
+    display_name: Webinar Ops
+    always_online: true
+  slash_commands:
+    - command: /webinar
+      url: https://internal-slack-bot-pi.vercel.app/api/slack/events
+      description: Submit a new webinar request
+      usage_hint: Opens a form to request a webinar session
+      should_escape: false
+
+oauth_config:
+  scopes:
+    bot:
+      - chat:write
+      - commands
+      - users:read
+      - im:write
+      - im:read
+      - files:read
+      - files:write
+
+settings:
+  interactivity:
+    is_enabled: true
+    request_url: https://internal-slack-bot-pi.vercel.app/api/slack/events
+  event_subscriptions:
+    request_url: https://internal-slack-bot-pi.vercel.app/api/slack/events
+    bot_events: []
+  org_deploy_enabled: false
+  socket_mode_enabled: false
+  token_rotation_enabled: false
