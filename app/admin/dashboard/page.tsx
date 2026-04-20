@@ -19,7 +19,7 @@ export default async function AdminDashboardPage() {
       <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
         <StatCard label="Total Trainers" value={data.stats.totalTrainers} />
         <StatCard label="Upcoming Webinars" value={data.stats.upcomingCount} />
-        <StatCard label="Avg Trainer Rating" value={data.stats.averageRating.toFixed(2)} />
+        <StatCard label="Completed Webinars" value={data.stats.completedCount} />
         <StatCard label="Total Attendees" value={data.stats.totalAttendees} />
       </div>
 

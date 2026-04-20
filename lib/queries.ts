@@ -12,6 +12,7 @@ export async function getAdminDashboardData() {
 
   const upcomingWebinars = (webinars ?? []).filter((webinar) => webinar.webinar_timing >= nowIso && webinar.status !== "cancelled");
   const pastWebinars = (webinars ?? []).filter((webinar) => webinar.webinar_timing < nowIso || webinar.status === "completed");
+  const completedWebinars = (webinars ?? []).filter((webinar) => webinar.status === "completed");
   const totalAttendees = (metrics ?? []).reduce((sum, item) => sum + item.attendees_count, 0);
   const averageRating =
     trainers && trainers.length > 0 ? trainers.reduce((sum, trainer) => sum + Number(trainer.average_rating ?? 0), 0) / trainers.length : 0;
@@ -26,6 +27,7 @@ export async function getAdminDashboardData() {
       totalTrainers: trainers?.length ?? 0,
       upcomingCount: upcomingWebinars.length,
       pastCount: pastWebinars.length,
+      completedCount: completedWebinars.length,
       averageRating,
       totalAttendees
     }

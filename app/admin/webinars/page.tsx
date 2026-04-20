@@ -1,9 +1,9 @@
+import { UpcomingWebinarsManager } from "@/components/admin/upcoming-webinars-manager";
 import { WebinarForm } from "@/components/admin/webinar-form";
-import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { createClient } from "@/lib/supabase/server";
-import { formatDate, formatPercent } from "@/lib/utils";
+import { formatPercent } from "@/lib/utils";
 
 export default async function AdminWebinarsPage() {
   const supabase = (await createClient()) as any;
@@ -35,22 +35,7 @@ export default async function AdminWebinarsPage() {
           <CardTitle>Upcoming Webinars</CardTitle>
         </CardHeader>
         <CardContent className="space-y-3">
-          {upcoming.map((item) => (
-            <div className="rounded-lg border p-3" key={item.id}>
-              <div className="flex items-center justify-between gap-2">
-                <p className="font-medium">{item.title}</p>
-                <Badge className="capitalize">{item.status}</Badge>
-              </div>
-              <p className="text-sm text-muted-foreground">{item.trainers?.name ?? "Unassigned"} • {formatDate(item.webinar_timing)}</p>
-              <p className="text-xs text-muted-foreground">Duration: {item.duration_minutes ?? 60} minutes</p>
-              <p className="mt-1 text-sm">{item.target_user_base ?? "No target audience defined yet."}</p>
-              {item.google_calendar_embed_url ? (
-                <a className="mt-2 inline-block text-xs text-primary underline" href={item.google_calendar_embed_url} target="_blank" rel="noreferrer">
-                  Add event to Google Calendar
-                </a>
-              ) : null}
-            </div>
-          ))}
+          <UpcomingWebinarsManager webinars={upcoming} trainerOptions={trainers ?? []} />
         </CardContent>
       </Card>
 

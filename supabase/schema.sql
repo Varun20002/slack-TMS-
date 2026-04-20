@@ -26,6 +26,7 @@ create table if not exists public.trainers (
   credentials_or_claim_to_fame text,
   certifications text,
   social_media_handles jsonb,
+  profile_image_url text,
   average_rating numeric(4,2) not null default 0,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
@@ -58,6 +59,8 @@ alter table public.webinars
 add column if not exists slack_requester_id text;
 alter table public.webinars
 add column if not exists slack_requester_name text;
+alter table public.trainers
+add column if not exists profile_image_url text;
 
 create table if not exists public.webinar_requests (
   id uuid primary key default gen_random_uuid(),

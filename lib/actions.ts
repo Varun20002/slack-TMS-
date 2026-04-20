@@ -4,12 +4,60 @@ import Papa from "papaparse";
 import { revalidatePath } from "next/cache";
 
 import { getCurrentProfile, requireRole } from "@/lib/auth";
+import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
+import { slackApi } from "@/lib/slack";
 import { buildGoogleCalendarEventUrl } from "@/lib/utils";
 import { availabilitySchema, trainerSchema, webinarSchema } from "@/lib/validation";
 
 export type ActionResponse = { success: boolean; message: string };
 type ContactField = "email" | "phone";
+const TRAINER_PROFILE_BUCKET = "trainer-profile-images";
+
+function sanitizeFileName(name: string) {
+  return name.toLowerCase().replace(/[^a-z0-9.\-_]/g, "-");
+}
+
+function getOpsChannelId() {
+  return process.env.OPS_CHANNEL_ID || null;
+}
+
+async function sendOpsWebinarUpdate(message: string) {
+  const channel = getOpsChannelId();
+  if (!channel) return;
+  try {
+    await slackApi("/chat.postMessage", { channel, text: message });
+  } catch (error) {
+    console.error("Failed to send Ops Slack update", error);
+  }
+}
+
+async function uploadTrainerProfileImage(supabaseAdmin: any, file: File, trainerKey: string) {
+  if (!file.type.startsWith("image/")) {
+    throw new Error("Profile photo must be an image file.");
+  }
+  const maxBytes = 5 * 1024 * 1024;
+  if (file.size > maxBytes) {
+    throw new Error("Profile photo must be 5MB or smaller.");
+  }
+
+  await supabaseAdmin.storage.createBucket(TRAINER_PROFILE_BUCKET, {
+    public: true,
+    fileSizeLimit: maxBytes,
+    allowedMimeTypes: ["image/png", "image/jpeg", "image/jpg", "image/webp"]
+  });
+
+  const path = `${trainerKey}/${Date.now()}-${sanitizeFileName(file.name || "profile.png")}`;
+  const { error: uploadError } = await supabaseAdmin.storage.from(TRAINER_PROFILE_BUCKET).upload(path, file, {
+    upsert: true,
+    contentType: file.type || "image/png"
+  });
+  if (uploadError) {
+    throw new Error(`Photo upload failed: ${uploadError.message}`);
+  }
+  const { data } = supabaseAdmin.storage.from(TRAINER_PROFILE_BUCKET).getPublicUrl(path);
+  return data.publicUrl;
+}
 
 export async function loginAction(input: { email: string; password: string; role: "admin" | "trainer" }) {
   const supabase = (await createClient()) as any;
@@ -49,21 +97,42 @@ export async function createTrainerAction(formData: FormData): Promise<ActionRes
 
   const socialRaw = parsed.data.social_media_handles?.trim();
   const social = socialRaw ? ({ handles: socialRaw } as Record<string, string>) : null;
-  const supabase = (await createClient()) as any;
+  const supabase = createAdminClient() as any;
+  const profileImageFile = formData.get("profile_image");
+  let profileImageUrl: string | null = null;
+
+  try {
+    if (profileImageFile instanceof File && profileImageFile.size > 0) {
+      profileImageUrl = await uploadTrainerProfileImage(supabase, profileImageFile, parsed.data.email);
+    }
+  } catch (error) {
+    return { success: false, message: error instanceof Error ? error.message : "Unable to upload profile photo." };
+  }
 
   const { error } = await supabase.from("trainers").insert({
     ...parsed.data,
     product_categories: parsed.data.product_categories,
     credentials_or_claim_to_fame: parsed.data.credentials_or_claim_to_fame || null,
     certifications: parsed.data.certifications || null,
-    social_media_handles: social
+    social_media_handles: social,
+    profile_image_url: profileImageUrl
   });
 
-  if (error) return { success: false, message: error.message };
+  if (error) {
+    if (error.message?.includes("profile_image_url")) {
+      return {
+        success: false,
+        message:
+          "Missing `profile_image_url` column in trainers table. Run: ALTER TABLE public.trainers ADD COLUMN IF NOT EXISTS profile_image_url text;"
+      };
+    }
+    return { success: false, message: error.message };
+  }
 
   revalidatePath("/admin/trainers");
   revalidatePath("/admin/dashboard");
   revalidatePath("/admin/webinars");
+  revalidatePath("/trainer/profile");
   return { success: true, message: "Trainer created successfully." };
 }
 
@@ -74,7 +143,18 @@ export async function updateTrainerAction(id: string, formData: FormData): Promi
     return { success: false, message: parsed.error.issues[0]?.message ?? "Invalid trainer data." };
   }
 
-  const supabase = (await createClient()) as any;
+  const supabase = createAdminClient() as any;
+  const profileImageFile = formData.get("profile_image");
+  let profileImageUrl: string | null | undefined = undefined;
+
+  try {
+    if (profileImageFile instanceof File && profileImageFile.size > 0) {
+      profileImageUrl = await uploadTrainerProfileImage(supabase, profileImageFile, parsed.data.email);
+    }
+  } catch (error) {
+    return { success: false, message: error instanceof Error ? error.message : "Unable to upload profile photo." };
+  }
+
   const { error } = await supabase
     .from("trainers")
     .update({
@@ -83,12 +163,23 @@ export async function updateTrainerAction(id: string, formData: FormData): Promi
       credentials_or_claim_to_fame: parsed.data.credentials_or_claim_to_fame || null,
       certifications: parsed.data.certifications || null,
       social_media_handles: parsed.data.social_media_handles ? { handles: parsed.data.social_media_handles } : null,
+      ...(profileImageUrl !== undefined ? { profile_image_url: profileImageUrl } : {}),
       updated_at: new Date().toISOString()
     })
     .eq("id", id);
 
-  if (error) return { success: false, message: error.message };
+  if (error) {
+    if (error.message?.includes("profile_image_url")) {
+      return {
+        success: false,
+        message:
+          "Missing `profile_image_url` column in trainers table. Run: ALTER TABLE public.trainers ADD COLUMN IF NOT EXISTS profile_image_url text;"
+      };
+    }
+    return { success: false, message: error.message };
+  }
   revalidatePath("/admin/trainers");
+  revalidatePath("/trainer/profile");
   return { success: true, message: "Trainer updated." };
 }
 
@@ -164,6 +255,100 @@ export async function createWebinarAction(formData: FormData): Promise<ActionRes
   revalidatePath("/trainer/dashboard");
   revalidatePath("/trainer/webinars");
   return { success: true, message: "Webinar scheduled." };
+}
+
+export async function updateWebinarAction(formData: FormData): Promise<ActionResponse> {
+  await requireRole("admin");
+  const id = String(formData.get("id") ?? "");
+  if (!id) return { success: false, message: "Missing webinar id." };
+
+  const parsed = webinarSchema.safeParse({
+    trainer_id: String(formData.get("trainer_id") ?? ""),
+    title: String(formData.get("title") ?? ""),
+    requirements: String(formData.get("requirements") ?? ""),
+    target_user_base: String(formData.get("target_user_base") ?? ""),
+    webinar_timing: String(formData.get("webinar_timing") ?? ""),
+    duration_minutes: String(formData.get("duration_minutes") ?? "60"),
+    pre_webinar_link: String(formData.get("pre_webinar_link") ?? ""),
+    post_webinar_link: String(formData.get("post_webinar_link") ?? ""),
+    google_calendar_embed_url: "",
+    status: String(formData.get("status") ?? "upcoming")
+  });
+  if (!parsed.success) {
+    return { success: false, message: parsed.error.issues[0]?.message ?? "Invalid webinar data." };
+  }
+
+  const supabase = (await createClient()) as any;
+  const { data: oldWebinar } = await supabase.from("webinars").select("id,title,webinar_timing,duration_minutes").eq("id", id).maybeSingle();
+  if (!oldWebinar) return { success: false, message: "Webinar not found." };
+
+  const start = new Date(parsed.data.webinar_timing);
+  if (Number.isNaN(start.getTime())) return { success: false, message: "Invalid webinar date/time." };
+  const end = new Date(start.getTime() + parsed.data.duration_minutes * 60 * 1000);
+  const generatedCalendarUrl = buildGoogleCalendarEventUrl({
+    title: parsed.data.title,
+    description: parsed.data.requirements || parsed.data.target_user_base || "",
+    start,
+    end
+  });
+
+  const { error } = await supabase
+    .from("webinars")
+    .update({
+      ...parsed.data,
+      webinar_timing: start.toISOString(),
+      requirements: parsed.data.requirements || null,
+      target_user_base: parsed.data.target_user_base || null,
+      pre_webinar_link: parsed.data.pre_webinar_link || null,
+      post_webinar_link: parsed.data.post_webinar_link || null,
+      google_calendar_embed_url: parsed.data.google_calendar_embed_url || generatedCalendarUrl,
+      updated_at: new Date().toISOString()
+    })
+    .eq("id", id);
+  if (error) return { success: false, message: error.message };
+
+  const oldDate = new Date(oldWebinar.webinar_timing);
+  const newDate = start;
+  let changeType = "updated";
+  if (parsed.data.status === "cancelled") changeType = "cancelled";
+  else if (newDate.getTime() < oldDate.getTime()) changeType = "preponed";
+  else if (newDate.getTime() > oldDate.getTime()) changeType = "postponed";
+
+  await sendOpsWebinarUpdate(
+    `Webinar ${changeType}: ${oldWebinar.title}\nOld: ${oldDate.toUTCString()} (${oldWebinar.duration_minutes ?? 60} min)\nNew: ${newDate.toUTCString()} (${parsed.data.duration_minutes} min)`
+  );
+
+  revalidatePath("/admin/webinars");
+  revalidatePath("/admin/dashboard");
+  revalidatePath("/admin/calendar");
+  revalidatePath("/trainer/webinars");
+  revalidatePath("/trainer/calendar");
+  revalidatePath("/trainer/dashboard");
+  return { success: true, message: "Webinar updated." };
+}
+
+export async function deleteWebinarAction(id: string): Promise<ActionResponse> {
+  await requireRole("admin");
+  if (!id) return { success: false, message: "Missing webinar id." };
+
+  const supabase = (await createClient()) as any;
+  const { data: webinar } = await supabase.from("webinars").select("id,title,webinar_timing,duration_minutes").eq("id", id).maybeSingle();
+  if (!webinar) return { success: false, message: "Webinar not found." };
+
+  const { error } = await supabase.from("webinars").delete().eq("id", id);
+  if (error) return { success: false, message: error.message };
+
+  await sendOpsWebinarUpdate(
+    `Webinar cancelled: ${webinar.title}\nScheduled: ${new Date(webinar.webinar_timing).toUTCString()} (${webinar.duration_minutes ?? 60} min)`
+  );
+
+  revalidatePath("/admin/webinars");
+  revalidatePath("/admin/dashboard");
+  revalidatePath("/admin/calendar");
+  revalidatePath("/trainer/webinars");
+  revalidatePath("/trainer/calendar");
+  revalidatePath("/trainer/dashboard");
+  return { success: true, message: "Webinar deleted." };
 }
 
 export async function uploadRatingsCsvAction(formData: FormData): Promise<ActionResponse> {

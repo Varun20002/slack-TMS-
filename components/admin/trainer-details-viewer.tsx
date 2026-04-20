@@ -20,6 +20,7 @@ type TrainerRecord = {
   credentials_or_claim_to_fame: string | null;
   certifications: string | null;
   social_media_handles: Record<string, string> | null;
+  profile_image_url?: string | null;
   average_rating: number;
 };
 
@@ -77,6 +78,7 @@ export function TrainerDetailsViewer({ trainers }: { trainers: TrainerRecord[] }
                   : null
               }
             />
+            <Detail label="Profile Image URL" value={selectedTrainer.profile_image_url ?? null} className="md:col-span-2" />
             <Detail label="Average Rating" value={Number(selectedTrainer.average_rating).toFixed(2)} />
           </div>
         ) : null}

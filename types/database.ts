@@ -42,6 +42,7 @@ export type Database = {
           credentials_or_claim_to_fame: string | null;
           certifications: string | null;
           social_media_handles: Record<string, string> | null;
+          profile_image_url: string | null;
           average_rating: number;
           created_at: string;
           updated_at: string;

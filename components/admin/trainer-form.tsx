@@ -1,7 +1,7 @@
 "use client";
 
 import { zodResolver } from "@hookform/resolvers/zod";
-import { useTransition } from "react";
+import { useRef, useTransition } from "react";
 import { useForm } from "react-hook-form";
 import { toast } from "sonner";
 import { z } from "zod";
@@ -33,6 +33,7 @@ const defaults: TrainerFormValues = {
 
 export function TrainerForm() {
   const [pending, startTransition] = useTransition();
+  const fileRef = useRef<HTMLInputElement | null>(null);
   const {
     register,
     handleSubmit,
@@ -47,6 +48,8 @@ export function TrainerForm() {
     startTransition(async () => {
       const formData = new FormData();
       Object.entries(values).forEach(([key, value]) => formData.append(key, String(value ?? "")));
+      const file = fileRef.current?.files?.[0];
+      if (file) formData.append("profile_image", file);
       const res = await createTrainerAction(formData);
       if (!res.success) {
         toast.error("Trainer not created", { description: res.message });
@@ -54,6 +57,7 @@ export function TrainerForm() {
       }
       toast.success("Trainer created");
       reset(defaults);
+      if (fileRef.current) fileRef.current.value = "";
     });
   });
 
@@ -97,6 +101,9 @@ export function TrainerForm() {
       </Field>
       <Field label="Social media handles" error={errors.social_media_handles?.message}>
         <Input placeholder="@x, @youtube" {...register("social_media_handles")} />
+      </Field>
+      <Field label="Profile photo (optional)">
+        <Input ref={fileRef} type="file" accept="image/png,image/jpeg,image/jpg,image/webp" />
       </Field>
       <div className="md:col-span-2">
         <Button disabled={pending} type="submit">
