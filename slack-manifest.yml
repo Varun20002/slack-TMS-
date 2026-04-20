@@ -11,7 +11,7 @@ features:
     display_name: TrainerOS Bot
     always_online: false
   slash_commands:
-    - command: /schedule-webinar
+    - command: /webinar
       url: https://YOUR_APP_DOMAIN/api/slack/commands
       description: Schedule a webinar in TrainerOS
       usage_hint: Opens a modal form

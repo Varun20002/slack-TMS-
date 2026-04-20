@@ -1,6 +1,7 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useRouter } from "next/navigation";
+import { useEffect, useState, useTransition } from "react";
 import { toast } from "sonner";
 
 import { deleteWebinarAction, updateWebinarAction } from "@/lib/actions";
@@ -11,6 +12,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
+import { TimeRemainingBadge } from "@/components/shared/time-remaining-badge";
 
 type TrainerOption = { id: string; name: string };
 
@@ -29,8 +31,14 @@ type UpcomingWebinar = {
 };
 
 export function UpcomingWebinarsManager({ webinars, trainerOptions }: { webinars: UpcomingWebinar[]; trainerOptions: TrainerOption[] }) {
+  const router = useRouter();
+  const [items, setItems] = useState<UpcomingWebinar[]>(webinars);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
+
+  useEffect(() => {
+    setItems(webinars);
+  }, [webinars]);
 
   const onDelete = (id: string) => {
     if (!window.confirm("Delete this webinar? This action cannot be undone.")) return;
@@ -40,19 +48,22 @@ export function UpcomingWebinarsManager({ webinars, trainerOptions }: { webinars
         toast.error("Delete failed", { description: res.message });
         return;
       }
+      setItems((prev) => prev.filter((item) => item.id !== id));
+      if (editingId === id) setEditingId(null);
+      router.refresh();
       toast.success("Webinar deleted");
     });
   };
 
   return (
     <div className="space-y-3">
-      {webinars.map((item) => {
+      {items.map((item) => {
         const isEditing = editingId === item.id;
         return (
           <div className="rounded-lg border p-3" key={item.id}>
             <div className="flex items-center justify-between gap-2">
               <p className="font-medium">{item.title}</p>
-              <Badge className="capitalize">{item.status}</Badge>
+              {item.status === "upcoming" ? <TimeRemainingBadge targetIso={item.webinar_timing} /> : <Badge className="capitalize">{item.status}</Badge>}
             </div>
             <p className="text-sm text-muted-foreground">
               {item.trainers?.name ?? "Unassigned"} • {formatDate(item.webinar_timing)}
@@ -100,6 +111,7 @@ function EditForm({
   pending: boolean;
   onSaved: () => void;
 }) {
+  const router = useRouter();
   const [working, startTransition] = useTransition();
 
   const onSubmit = (formData: FormData) => {
@@ -110,6 +122,7 @@ function EditForm({
         return;
       }
       toast.success("Webinar updated");
+      router.refresh();
       onSaved();
     });
   };

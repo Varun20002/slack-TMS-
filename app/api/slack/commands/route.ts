@@ -5,6 +5,11 @@ import { createAdminClient } from "@/lib/supabase/admin";
 
 export const runtime = "nodejs";
 
+const DURATION_OPTIONS = [30, 60, 90, 120, 150, 180].map((value) => ({
+  text: { type: "plain_text" as const, text: `${value} minutes` },
+  value: String(value)
+}));
+
 export async function GET() {
   return NextResponse.json(
     {
@@ -103,14 +108,43 @@ export async function POST(request: Request) {
           {
             type: "input",
             block_id: "trainer_block",
+            dispatch_action: true,
             label: { type: "plain_text", text: "Trainer" },
             element: trainerElement
           },
           {
             type: "input",
-            block_id: "timing_block",
-            label: { type: "plain_text", text: "Webinar Start Time" },
-            element: { type: "datetimepicker", action_id: "webinar_timing_ts" }
+            block_id: "date_block",
+            dispatch_action: true,
+            label: { type: "plain_text", text: "Webinar Date" },
+            element: { type: "datepicker", action_id: "request_date", placeholder: { type: "plain_text", text: "Select date" } }
+          },
+          {
+            type: "context",
+            elements: [{ type: "mrkdwn", text: "Select trainer to see available weekdays." }]
+          },
+          {
+            type: "input",
+            block_id: "duration_block",
+            dispatch_action: true,
+            label: { type: "plain_text", text: "Duration" },
+            element: {
+              type: "static_select",
+              action_id: "duration_minutes",
+              placeholder: { type: "plain_text", text: "Select duration" },
+              options: DURATION_OPTIONS
+            }
+          },
+          {
+            type: "input",
+            block_id: "time_block",
+            label: { type: "plain_text", text: "Available Timing" },
+            element: {
+              type: "static_select",
+              action_id: "start_time",
+              placeholder: { type: "plain_text", text: "Select trainer, date and duration first" },
+              options: [{ text: { type: "plain_text", text: "No slots loaded yet" }, value: "__unavailable__" }]
+            }
           },
           {
             type: "input",
@@ -118,13 +152,6 @@ export async function POST(request: Request) {
             optional: true,
             label: { type: "plain_text", text: "Expected Attendees" },
             element: { type: "plain_text_input", action_id: "attendees_est", placeholder: { type: "plain_text", text: "e.g. 120" } }
-          },
-          {
-            type: "input",
-            block_id: "duration_block",
-            optional: true,
-            label: { type: "plain_text", text: "Duration (minutes)" },
-            element: { type: "plain_text_input", action_id: "duration_minutes", placeholder: { type: "plain_text", text: "e.g. 60" } }
           },
           {
             type: "input",
@@ -139,20 +166,6 @@ export async function POST(request: Request) {
             optional: true,
             label: { type: "plain_text", text: "Target User Base" },
             element: { type: "plain_text_input", action_id: "target_user_base" }
-          },
-          {
-            type: "input",
-            block_id: "pre_link_block",
-            optional: true,
-            label: { type: "plain_text", text: "Pre-webinar Link" },
-            element: { type: "plain_text_input", action_id: "pre_webinar_link" }
-          },
-          {
-            type: "input",
-            block_id: "post_link_block",
-            optional: true,
-            label: { type: "plain_text", text: "Post-webinar Link" },
-            element: { type: "plain_text_input", action_id: "post_webinar_link" }
           }
         ]
       }

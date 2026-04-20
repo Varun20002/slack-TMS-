@@ -8,7 +8,8 @@ export function cn(...inputs: ClassValue[]) {
 export function formatDate(value: string | Date) {
   return new Date(value).toLocaleString("en-IN", {
     dateStyle: "medium",
-    timeStyle: "short"
+    timeStyle: "short",
+    timeZone: "Asia/Kolkata"
   });
 }
 

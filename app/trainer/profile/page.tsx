@@ -1,6 +1,6 @@
 import Image from "next/image";
+import { User } from "lucide-react";
 
-import { ProfileForm } from "@/components/layout/profile-form";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { requireRole } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
@@ -12,36 +12,30 @@ export default async function TrainerProfilePage() {
 
   return (
     <div className="space-y-6">
-      <Card>
-        <CardHeader>
-          <CardTitle>Trainer Profile</CardTitle>
-          <CardDescription>You can edit phone and display email here. Auth email updates should be handled in Supabase Auth settings if required.</CardDescription>
-        </CardHeader>
-        <CardContent>
-          {trainer?.profile_image_url ? (
-            <div className="mb-6">
-              <p className="mb-2 text-sm font-medium">Profile Photo</p>
-              <Image
-                src={trainer.profile_image_url}
-                alt={`${profile.full_name} profile`}
-                width={96}
-                height={96}
-                className="h-24 w-24 rounded-full border object-cover"
-                unoptimized
-              />
-            </div>
-          ) : null}
-          <ProfileForm defaults={{ full_name: profile.full_name, phone: profile.phone ?? "", email: profile.email }} />
-        </CardContent>
-      </Card>
-
       {trainer ? (
         <Card>
           <CardHeader>
-            <CardTitle>Trainer Details</CardTitle>
+            <CardTitle>Your profile</CardTitle>
             <CardDescription>All onboarding fields associated with your trainer record.</CardDescription>
           </CardHeader>
           <CardContent>
+            <div className="mb-6">
+              <p className="mb-2 text-sm font-medium">Profile Photo</p>
+              {trainer.profile_image_url ? (
+                <Image
+                  src={trainer.profile_image_url}
+                  alt={`${profile.full_name} profile`}
+                  width={96}
+                  height={96}
+                  className="h-24 w-24 rounded-full border object-cover"
+                  unoptimized
+                />
+              ) : (
+                <div className="flex h-24 w-24 items-center justify-center rounded-full border bg-muted/30">
+                  <User className="h-10 w-10 text-muted-foreground" aria-hidden="true" />
+                </div>
+              )}
+            </div>
             <div className="grid gap-3 md:grid-cols-2">
               <Detail label="Name" value={trainer.name} />
               <Detail label="Experience (years)" value={trainer.experience} />

@@ -1,38 +1,59 @@
+import { PastWebinarsTable } from "@/components/admin/past-webinars-table";
 import { UpcomingWebinarsManager } from "@/components/admin/upcoming-webinars-manager";
-import { WebinarForm } from "@/components/admin/webinar-form";
+import { WebinarRequestStatus } from "@/components/admin/webinar-request-status";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { createClient } from "@/lib/supabase/server";
-import { formatPercent } from "@/lib/utils";
 
 export default async function AdminWebinarsPage() {
   const supabase = (await createClient()) as any;
   const now = new Date().toISOString();
 
-  const [{ data: trainers }, { data: webinars }, { data: metrics }] = await Promise.all([
+  const [{ data: trainers }, { data: webinars }, { data: metrics }, webinarRequestsResult, submittedAuditRows] = await Promise.all([
     supabase.from("trainers").select("id,name").order("name"),
     supabase.from("webinars").select("*, trainers(name)").order("webinar_timing"),
-    supabase.from("webinar_metrics").select("*")
+    supabase.from("webinar_metrics").select("*"),
+    supabase
+      .from("webinar_requests")
+      .select("id,topic,trainer_name,state,requested_date,created_at,updated_at")
+      .order("created_at", { ascending: false })
+      .limit(50),
+    supabase.from("audit_log").select("request_id").eq("action", "submit_slack_webinar_request")
   ]);
+
+  const requestError = webinarRequestsResult.error;
+  const requestErrorMessage =
+    requestError && (requestError.code === "42P01" || requestError.message?.toLowerCase().includes("webinar_requests"))
+      ? "Slack request table is not available in this environment yet."
+      : requestError?.message;
+  const slackRequestIds = new Set((submittedAuditRows.data ?? []).map((row) => row.request_id).filter(Boolean));
+  const requestRows = (webinarRequestsResult.data ?? []).filter((row) => slackRequestIds.has(row.id));
 
   const upcoming = (webinars ?? []).filter((item) => item.webinar_timing >= now && item.status !== "cancelled");
   const past = (webinars ?? []).filter((item) => item.webinar_timing < now || item.status === "completed");
+  const pastRows = past.map((item) => {
+    const metric = (metrics ?? []).find((m) => m.webinar_id === item.id);
+    return {
+      id: item.id,
+      title: item.title,
+      trainerName: item.trainers?.name ?? "-",
+      attendees: metric?.attendees_count ?? 0,
+      rating: Number(metric?.rating ?? 0),
+      successRate: Number(metric?.success_rate ?? 0),
+      postWebinarLink: item.post_webinar_link ?? null
+    };
+  });
 
   return (
     <div className="space-y-6">
-      <Card>
-        <CardHeader>
-          <CardTitle>Schedule Webinar</CardTitle>
-          <CardDescription>Assign trainer, timing, links, and Google calendar embed details.</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <WebinarForm trainerOptions={trainers ?? []} />
-        </CardContent>
-      </Card>
+      <WebinarRequestStatus
+        requests={requestRows}
+        errorMessage={requestErrorMessage}
+      />
 
       <Card>
         <CardHeader>
           <CardTitle>Upcoming Webinars</CardTitle>
+          <CardDescription>Webinars are created via Slack bot. You can edit or delete them here.</CardDescription>
         </CardHeader>
         <CardContent className="space-y-3">
           <UpcomingWebinarsManager webinars={upcoming} trainerOptions={trainers ?? []} />
@@ -41,45 +62,10 @@ export default async function AdminWebinarsPage() {
 
       <Card>
         <CardHeader>
-          <CardTitle>Past Webinars with Metrics</CardTitle>
+          <CardTitle>Past Webinars</CardTitle>
         </CardHeader>
         <CardContent className="overflow-x-auto">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Title</TableHead>
-                <TableHead>Trainer</TableHead>
-                <TableHead>Attendees</TableHead>
-                <TableHead>Rating</TableHead>
-                <TableHead>Success</TableHead>
-                <TableHead>Links</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {past.map((item) => {
-                const metric = (metrics ?? []).find((m) => m.webinar_id === item.id);
-                return (
-                  <TableRow key={item.id}>
-                    <TableCell>{item.title}</TableCell>
-                    <TableCell>{item.trainers?.name ?? "-"}</TableCell>
-                    <TableCell>{metric?.attendees_count ?? 0}</TableCell>
-                    <TableCell>{Number(metric?.rating ?? 0).toFixed(2)}</TableCell>
-                    <TableCell>{formatPercent(metric?.success_rate ?? 0)}</TableCell>
-                    <TableCell>
-                      <div className="flex gap-3 text-xs">
-                        <a href={item.pre_webinar_link ?? "#"} className="text-primary underline" target="_blank" rel="noreferrer">
-                          pre
-                        </a>
-                        <a href={item.post_webinar_link ?? "#"} className="text-primary underline" target="_blank" rel="noreferrer">
-                          post
-                        </a>
-                      </div>
-                    </TableCell>
-                  </TableRow>
-                );
-              })}
-            </TableBody>
-          </Table>
+          <PastWebinarsTable rows={pastRows} />
         </CardContent>
       </Card>
     </div>

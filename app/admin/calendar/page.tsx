@@ -1,5 +1,4 @@
 import { WebinarCalendar } from "@/components/shared/webinar-calendar";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { createClient } from "@/lib/supabase/server";
 
 export default async function AdminCalendarPage() {
@@ -34,34 +33,5 @@ export default async function AdminCalendarPage() {
     };
   });
 
-  return (
-    <div className="space-y-6">
-      <WebinarCalendar events={events} title="Admin Webinar Calendar" description="All scheduled webinars appear here automatically." />
-
-      <Card>
-        <CardHeader>
-          <CardTitle>Google Calendar Event Actions</CardTitle>
-          <CardDescription>Each webinar now generates a Google Calendar event link from start time and duration. Click to open and save in your calendar.</CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-3">
-          {webinars.map((item) => (
-            <div key={item.id} className="rounded-lg border p-3">
-              <p className="font-medium">{item.title}</p>
-              <p className="text-sm text-muted-foreground">
-                {new Date(item.webinar_timing).toLocaleString()} • {item.duration_minutes ?? 60} mins
-              </p>
-              {item.google_calendar_embed_url ? (
-                <a href={item.google_calendar_embed_url} target="_blank" rel="noreferrer" className="mt-2 inline-block text-sm text-primary underline">
-                  Open Google Calendar Event
-                </a>
-              ) : (
-                <p className="mt-2 text-sm text-muted-foreground">No calendar link available.</p>
-              )}
-            </div>
-          ))}
-          {!webinars.length ? <p className="text-sm text-muted-foreground">No webinars scheduled yet.</p> : null}
-        </CardContent>
-      </Card>
-    </div>
-  );
+  return <WebinarCalendar events={events} title="Admin Webinar Calendar" description="All scheduled webinars appear here automatically." />;
 }

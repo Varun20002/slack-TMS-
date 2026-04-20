@@ -7,7 +7,7 @@ import { getCurrentProfile, requireRole } from "@/lib/auth";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 import { slackApi } from "@/lib/slack";
-import { buildGoogleCalendarEventUrl } from "@/lib/utils";
+import { buildGoogleCalendarEventUrl, formatDate } from "@/lib/utils";
 import { availabilitySchema, trainerSchema, webinarSchema } from "@/lib/validation";
 
 export type ActionResponse = { success: boolean; message: string };
@@ -279,7 +279,25 @@ export async function updateWebinarAction(formData: FormData): Promise<ActionRes
   }
 
   const supabase = (await createClient()) as any;
-  const { data: oldWebinar } = await supabase.from("webinars").select("id,title,webinar_timing,duration_minutes").eq("id", id).maybeSingle();
+  const oldWithDuration = await supabase
+    .from("webinars")
+    .select("id,title,trainer_id,webinar_timing,duration_minutes,requirements,target_user_base,pre_webinar_link,post_webinar_link,status")
+    .eq("id", id)
+    .maybeSingle();
+  let oldWebinar = oldWithDuration.data as any;
+  let oldWebinarError = oldWithDuration.error as any;
+
+  if (oldWebinarError && (oldWebinarError.code === "42703" || oldWebinarError.message?.includes("duration_minutes"))) {
+    const oldLegacy = await supabase
+      .from("webinars")
+      .select("id,title,trainer_id,webinar_timing,requirements,target_user_base,pre_webinar_link,post_webinar_link,status")
+      .eq("id", id)
+      .maybeSingle();
+    oldWebinar = oldLegacy.data ? { ...oldLegacy.data, duration_minutes: null } : null;
+    oldWebinarError = oldLegacy.error;
+  }
+
+  if (oldWebinarError) return { success: false, message: oldWebinarError.message ?? "Failed to fetch webinar." };
   if (!oldWebinar) return { success: false, message: "Webinar not found." };
 
   const start = new Date(parsed.data.webinar_timing);
@@ -292,31 +310,60 @@ export async function updateWebinarAction(formData: FormData): Promise<ActionRes
     end
   });
 
-  const { error } = await supabase
-    .from("webinars")
-    .update({
-      ...parsed.data,
-      webinar_timing: start.toISOString(),
-      requirements: parsed.data.requirements || null,
-      target_user_base: parsed.data.target_user_base || null,
-      pre_webinar_link: parsed.data.pre_webinar_link || null,
-      post_webinar_link: parsed.data.post_webinar_link || null,
-      google_calendar_embed_url: parsed.data.google_calendar_embed_url || generatedCalendarUrl,
-      updated_at: new Date().toISOString()
-    })
-    .eq("id", id);
-  if (error) return { success: false, message: error.message };
+  const updatePayloadWithDuration = {
+    ...parsed.data,
+    webinar_timing: start.toISOString(),
+    requirements: parsed.data.requirements || null,
+    target_user_base: parsed.data.target_user_base || null,
+    pre_webinar_link: parsed.data.pre_webinar_link || null,
+    post_webinar_link: parsed.data.post_webinar_link || null,
+    google_calendar_embed_url: parsed.data.google_calendar_embed_url || generatedCalendarUrl,
+    updated_at: new Date().toISOString()
+  };
+
+  let updateError: any = null;
+  const updateWithDuration = await supabase.from("webinars").update(updatePayloadWithDuration).eq("id", id);
+  updateError = updateWithDuration.error;
+
+  if (updateError && (updateError.code === "42703" || updateError.message?.includes("duration_minutes"))) {
+    const legacyPayload = { ...updatePayloadWithDuration } as Record<string, unknown>;
+    delete legacyPayload.duration_minutes;
+    const legacyUpdate = await supabase.from("webinars").update(legacyPayload).eq("id", id);
+    updateError = legacyUpdate.error;
+  }
+  if (updateError) return { success: false, message: updateError.message };
 
   const oldDate = new Date(oldWebinar.webinar_timing);
   const newDate = start;
-  let changeType = "updated";
-  if (parsed.data.status === "cancelled") changeType = "cancelled";
-  else if (newDate.getTime() < oldDate.getTime()) changeType = "preponed";
-  else if (newDate.getTime() > oldDate.getTime()) changeType = "postponed";
+  const normalize = (value: unknown) => (value ?? "").toString().trim();
 
-  await sendOpsWebinarUpdate(
-    `Webinar ${changeType}: ${oldWebinar.title}\nOld: ${oldDate.toUTCString()} (${oldWebinar.duration_minutes ?? 60} min)\nNew: ${newDate.toUTCString()} (${parsed.data.duration_minutes} min)`
-  );
+  const changedFields: string[] = [];
+  if (normalize(oldWebinar.title) !== normalize(parsed.data.title)) changedFields.push("title");
+  if (normalize(oldWebinar.trainer_id) !== normalize(parsed.data.trainer_id)) changedFields.push("trainer");
+  if (oldDate.getTime() !== newDate.getTime()) changedFields.push("timing");
+  if (Number(oldWebinar.duration_minutes ?? 60) !== Number(parsed.data.duration_minutes)) changedFields.push("duration");
+  if (normalize(oldWebinar.requirements) !== normalize(parsed.data.requirements)) changedFields.push("requirements");
+  if (normalize(oldWebinar.target_user_base) !== normalize(parsed.data.target_user_base)) changedFields.push("target user base");
+  if (normalize(oldWebinar.pre_webinar_link) !== normalize(parsed.data.pre_webinar_link)) changedFields.push("pre-webinar link");
+  if (normalize(oldWebinar.post_webinar_link) !== normalize(parsed.data.post_webinar_link)) changedFields.push("post-webinar link");
+  if (normalize(oldWebinar.status) !== normalize(parsed.data.status)) changedFields.push("status");
+
+  const heading =
+    changedFields.length === 1 && changedFields[0] === "timing"
+      ? newDate.getTime() < oldDate.getTime()
+        ? "Webinar preponed"
+        : "Webinar postponed"
+      : changedFields.length === 1 && changedFields[0] === "title"
+        ? "Webinar title updated"
+        : "Webinar updated";
+
+  await sendOpsWebinarUpdate([
+    `${heading}: ${oldWebinar.title}`,
+    `Changed: ${changedFields.length ? changedFields.join(", ") : "none"}`,
+    `Old time: ${formatDate(oldDate)} (${oldWebinar.duration_minutes ?? 60} min)`,
+    `New time: ${formatDate(newDate)} (${parsed.data.duration_minutes} min)`,
+    changedFields.includes("title") ? `New title: ${parsed.data.title}` : null
+  ].filter(Boolean).join("\n"));
 
   revalidatePath("/admin/webinars");
   revalidatePath("/admin/dashboard");
@@ -332,14 +379,28 @@ export async function deleteWebinarAction(id: string): Promise<ActionResponse> {
   if (!id) return { success: false, message: "Missing webinar id." };
 
   const supabase = (await createClient()) as any;
-  const { data: webinar } = await supabase.from("webinars").select("id,title,webinar_timing,duration_minutes").eq("id", id).maybeSingle();
-  if (!webinar) return { success: false, message: "Webinar not found." };
+  const withDuration = await supabase
+    .from("webinars")
+    .select("id,title,webinar_timing,duration_minutes")
+    .eq("id", id)
+    .maybeSingle();
+  let webinar = withDuration.data as any;
+  let webinarError = withDuration.error as any;
 
-  const { error } = await supabase.from("webinars").delete().eq("id", id);
-  if (error) return { success: false, message: error.message };
+  if (webinarError && (webinarError.code === "42703" || webinarError.message?.includes("duration_minutes"))) {
+    const legacyWebinar = await supabase.from("webinars").select("id,title,webinar_timing").eq("id", id).maybeSingle();
+    webinar = legacyWebinar.data ? { ...legacyWebinar.data, duration_minutes: null } : null;
+    webinarError = legacyWebinar.error;
+  }
+
+  if (webinarError) return { success: false, message: webinarError.message };
+  if (!webinar) return { success: false, message: "Webinar not found or already deleted." };
+
+  const { error: deleteError } = await supabase.from("webinars").delete().eq("id", id);
+  if (deleteError) return { success: false, message: deleteError.message };
 
   await sendOpsWebinarUpdate(
-    `Webinar cancelled: ${webinar.title}\nScheduled: ${new Date(webinar.webinar_timing).toUTCString()} (${webinar.duration_minutes ?? 60} min)`
+    `Webinar cancelled: ${webinar.title}\nScheduled: ${formatDate(webinar.webinar_timing)} (${webinar.duration_minutes ?? 60} min)`
   );
 
   revalidatePath("/admin/webinars");
@@ -349,6 +410,33 @@ export async function deleteWebinarAction(id: string): Promise<ActionResponse> {
   revalidatePath("/trainer/calendar");
   revalidatePath("/trainer/dashboard");
   return { success: true, message: "Webinar deleted." };
+}
+
+export async function updateWebinarPostLinkAction(id: string, postWebinarLink: string): Promise<ActionResponse> {
+  await requireRole("admin");
+  if (!id) return { success: false, message: "Missing webinar id." };
+
+  const value = postWebinarLink.trim();
+  if (!value) return { success: false, message: "Post-webinar link cannot be empty." };
+
+  let normalized: string;
+  try {
+    normalized = new URL(value).toString();
+  } catch {
+    return { success: false, message: "Enter a valid URL (https://...)." };
+  }
+
+  const supabase = (await createClient()) as any;
+  const { error } = await supabase
+    .from("webinars")
+    .update({ post_webinar_link: normalized, updated_at: new Date().toISOString() })
+    .eq("id", id);
+
+  if (error) return { success: false, message: error.message };
+
+  revalidatePath("/admin/webinars");
+  revalidatePath("/trainer/webinars");
+  return { success: true, message: "Post-webinar link updated." };
 }
 
 export async function uploadRatingsCsvAction(formData: FormData): Promise<ActionResponse> {

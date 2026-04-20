@@ -170,7 +170,7 @@ Routes:
 - `/api/slack/interactions`
 
 Suggested Slack app setup:
-1. Create slash command: `/schedule-webinar`
+1. Create slash command: `/webinar`
    - Request URL: `https://<your-domain>/api/slack/commands`
 2. Interactivity Request URL:
    - `https://<your-domain>/api/slack/interactions`

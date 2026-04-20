@@ -1,4 +1,5 @@
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { TimeRemainingBadge } from "@/components/shared/time-remaining-badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { getCurrentProfile } from "@/lib/auth";
 import { getTrainerDashboardData } from "@/lib/queries";
@@ -23,6 +24,7 @@ export default async function TrainerWebinarsPage() {
               <TableRow>
                 <TableHead>Title</TableHead>
                 <TableHead>Timing</TableHead>
+                <TableHead>Remaining</TableHead>
                 <TableHead>Target users</TableHead>
                 <TableHead>Pre link</TableHead>
               </TableRow>
@@ -32,6 +34,9 @@ export default async function TrainerWebinarsPage() {
                 <TableRow key={item.id}>
                   <TableCell>{item.title}</TableCell>
                   <TableCell>{formatDate(item.webinar_timing)}</TableCell>
+                  <TableCell>
+                    <TimeRemainingBadge targetIso={item.webinar_timing} />
+                  </TableCell>
                   <TableCell>{item.target_user_base ?? "-"}</TableCell>
                   <TableCell>
                     <a href={item.pre_webinar_link ?? "#"} target="_blank" rel="noreferrer" className="text-primary underline">

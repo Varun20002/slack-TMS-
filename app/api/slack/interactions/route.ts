@@ -4,7 +4,7 @@ import { z } from "zod";
 
 import { slackApi, verifySlackSignature } from "@/lib/slack";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { buildGoogleCalendarEventUrl } from "@/lib/utils";
+import { buildGoogleCalendarEventUrl, formatDate } from "@/lib/utils";
 
 export const runtime = "nodejs";
 
@@ -21,18 +21,20 @@ const VALID_TRANSITIONS: Record<WebinarState, WebinarState[]> = {
   CANCELLED: []
 };
 
-const CHECKLIST_KEYS = ["headshot", "bio", "deck", "promo_assets"] as const;
+const CHECKLIST_KEYS = ["received_pic", "creatives_made", "campaigns_done"] as const;
+const DURATION_VALUES = [30, 60, 90, 120, 150, 180] as const;
+const NO_SLOT_VALUE = "__no_slot__";
+const WEEKDAY_LABELS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"] as const;
 
 const slackWebinarSchema = z.object({
   title: z.string().min(3),
   trainer_id: z.string().min(1),
-  webinar_timing_ts: z.coerce.number().int().positive(),
+  request_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+  start_time: z.string().regex(/^\d{2}:\d{2}$/),
   attendees_est: z.coerce.number().int().min(0).default(0),
-  duration_minutes: z.coerce.number().int().min(15).max(240).default(60),
+  duration_minutes: z.coerce.number().int().refine((v) => DURATION_VALUES.includes(v as any), { message: "Duration must be between 30 and 180 minutes." }),
   requirements: z.string().optional(),
-  target_user_base: z.string().optional(),
-  pre_webinar_link: z.string().optional(),
-  post_webinar_link: z.string().optional()
+  target_user_base: z.string().optional()
 });
 
 export async function GET() {
@@ -44,10 +46,11 @@ function getInput(state: any, blockId: string, actionId: string) {
 }
 
 function combineDateTimeUtc(date: string, time: string) {
-  const [h, m] = time.split(":").map(Number);
-  const d = new Date(`${date}T00:00:00.000Z`);
-  d.setUTCHours(h || 0, m || 0, 0, 0);
-  return d.toISOString();
+  return new Date(`${date}T${time}:00+05:30`).toISOString();
+}
+
+function combineDateTimeIst(date: string, time: string) {
+  return new Date(`${date}T${time}:00+05:30`).toISOString();
 }
 
 function normalizeUrl(url: string | undefined) {
@@ -70,13 +73,12 @@ function requireEnv(name: "BP_CHANNEL_ID" | "GROWTH_CHANNEL_ID" | "OPS_CHANNEL_I
 function slackErrorField(path: string) {
   if (path === "title") return "title_block";
   if (path === "trainer_id") return "trainer_block";
-  if (path === "webinar_timing_ts") return "timing_block";
+  if (path === "request_date") return "date_block";
+  if (path === "start_time") return "time_block";
   if (path === "attendees_est") return "attendees_block";
   if (path === "duration_minutes") return "duration_block";
   if (path === "requirements") return "requirements_block";
   if (path === "target_user_base") return "target_user_base_block";
-  if (path === "pre_webinar_link") return "pre_link_block";
-  if (path === "post_webinar_link") return "post_link_block";
   return "title_block";
 }
 
@@ -103,10 +105,9 @@ function getRequestIdFromAction(payload: any) {
 
 function checklistLabel(key: string) {
   const map: Record<string, string> = {
-    headshot: "Headshot",
-    bio: "Bio",
-    deck: "Deck",
-    promo_assets: "Promo assets"
+    received_pic: "Received the picture",
+    creatives_made: "Creatives made",
+    campaigns_done: "Campaigns done"
   };
   return map[key] ?? key;
 }
@@ -126,7 +127,7 @@ function bpRequestCard(params: {
       fields: [
         { type: "mrkdwn", text: `*Topic*\n${params.topic}` },
         { type: "mrkdwn", text: `*Trainer*\n${params.trainerName}` },
-        { type: "mrkdwn", text: `*Preferred time*\n${new Date(params.requestedDate).toUTCString()}` },
+        { type: "mrkdwn", text: `*Preferred time*\n${formatDate(params.requestedDate)}` },
         { type: "mrkdwn", text: `*Est. attendees*\n${params.attendees}` },
         { type: "mrkdwn", text: `*Requested by*\n${params.employeeName}` },
         { type: "mrkdwn", text: `*Request ID*\n\`${params.requestId}\`` }
@@ -137,7 +138,7 @@ function bpRequestCard(params: {
       block_id: `bp_actions_${params.requestId}`,
       elements: [
         { type: "button", text: { type: "plain_text", text: "Confirm" }, style: "primary", action_id: "bp_confirm", value: params.requestId },
-        { type: "button", text: { type: "plain_text", text: "Reject" }, style: "danger", action_id: "bp_reject", value: params.requestId },
+        { type: "button", text: { type: "plain_text", text: "Decline" }, style: "danger", action_id: "bp_reject", value: params.requestId },
         { type: "button", text: { type: "plain_text", text: "Suggest alternative" }, action_id: "bp_suggest_alt", value: params.requestId }
       ]
     }
@@ -182,13 +183,13 @@ function growthChecklistBlocks(requestRow: any, items: Array<{ item: string; com
   });
 
   return [
-    { type: "header", text: { type: "plain_text", text: "Webinar content checklist", emoji: true } },
+    { type: "header", text: { type: "plain_text", text: "Growth check list", emoji: true } },
     {
       type: "section",
       fields: [
         { type: "mrkdwn", text: `*Topic*\n${requestRow.topic}` },
         { type: "mrkdwn", text: `*Trainer*\n${requestRow.trainer_name}` },
-        { type: "mrkdwn", text: `*Scheduled*\n${new Date(requestRow.requested_date).toUTCString()}` },
+        { type: "mrkdwn", text: `*Scheduled*\n${formatDate(requestRow.requested_date)}` },
         { type: "mrkdwn", text: `*Est. attendees*\n${requestRow.attendees_est}` },
         { type: "mrkdwn", text: `*Request ID*\n\`${requestRow.id}\`` }
       ]
@@ -211,6 +212,12 @@ async function dmUser(userId: string, text: string, blocks?: any[]) {
   } catch {
     return;
   }
+}
+
+async function resolveActionMessageContext(payload: any) {
+  const channelId = payload.container?.channel_id ?? payload.channel?.id;
+  const messageTs = payload.container?.message_ts ?? payload.message?.ts;
+  return { channelId, messageTs };
 }
 
 async function transitionRequest(params: {
@@ -285,7 +292,7 @@ async function upsertWebinarForRequest(supabase: any, requestRow: any, actor: { 
     pre_webinar_link: normalizeUrl(metadata.pre_webinar_link as string),
     post_webinar_link: normalizeUrl(metadata.post_webinar_link as string),
     google_calendar_embed_url: googleLink,
-    status: requestRow.state === "COMPLETED" ? "completed" : requestRow.state === "CANCELLED" || requestRow.state === "REJECTED" ? "cancelled" : "upcoming"
+    status: requestRow.state === "CANCELLED" || requestRow.state === "REJECTED" ? "cancelled" : "upcoming"
   };
 
   for (let attempt = 0; attempt < 8; attempt += 1) {
@@ -351,8 +358,8 @@ function rejectReasonModal(requestId: string) {
     type: "modal",
     callback_id: "bp_reject_modal",
     private_metadata: requestId,
-    title: { type: "plain_text", text: "Reject request" },
-    submit: { type: "plain_text", text: "Reject" },
+    title: { type: "plain_text", text: "Decline request" },
+    submit: { type: "plain_text", text: "Decline" },
     close: { type: "plain_text", text: "Cancel" },
     blocks: [
       {
@@ -375,30 +382,237 @@ function altDateModal(requestId: string) {
     close: { type: "plain_text", text: "Cancel" },
     blocks: [
       { type: "input", block_id: "alt_date", label: { type: "plain_text", text: "New date" }, element: { type: "datepicker", action_id: "val" } },
-      { type: "input", block_id: "alt_time", label: { type: "plain_text", text: "New time (UTC)" }, element: { type: "timepicker", action_id: "val" } }
+      { type: "input", block_id: "alt_time", label: { type: "plain_text", text: "New time" }, element: { type: "timepicker", action_id: "val" } }
+    ]
+  };
+}
+
+type ScheduleDraft = {
+  title: string;
+  trainer_id: string;
+  request_date: string;
+  duration_minutes: string;
+  start_time: string;
+  attendees_est: string;
+  requirements: string;
+  target_user_base: string;
+};
+
+function durationOptions() {
+  return DURATION_VALUES.map((value) => ({
+    text: { type: "plain_text" as const, text: `${value} minutes` },
+    value: String(value)
+  }));
+}
+
+function parseTimeToMinutes(input: string) {
+  const [h, m] = input.split(":").map(Number);
+  return h * 60 + m;
+}
+
+function minutesToTimeLabel(totalMinutes: number) {
+  const h = Math.floor(totalMinutes / 60);
+  const m = totalMinutes % 60;
+  return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
+}
+
+function dayOfWeekFromDate(date: string) {
+  return new Date(`${date}T00:00:00+05:30`).getDay();
+}
+
+async function buildTrainerOptions(supabase: any) {
+  const { data: trainers } = await supabase.from("trainers").select("id, name").order("name", { ascending: true }).limit(100);
+  return (trainers ?? []).map((trainer: { id: string; name: string }) => ({
+    text: { type: "plain_text" as const, text: trainer.name.slice(0, 75) },
+    value: trainer.id
+  }));
+}
+
+async function buildAvailableTimeOptions(supabase: any, trainerId: string, requestDate: string, durationMinutes: number) {
+  if (!trainerId || !requestDate || !durationMinutes) {
+    return [{ text: { type: "plain_text" as const, text: "Select trainer, date and duration first" }, value: NO_SLOT_VALUE }];
+  }
+
+  const dayOfWeek = dayOfWeekFromDate(requestDate);
+  const { data: rows } = await supabase
+    .from("trainer_availability")
+    .select("start_time,end_time")
+    .eq("trainer_id", trainerId)
+    .eq("day_of_week", dayOfWeek)
+    .order("start_time", { ascending: true });
+
+  const options: Array<{ text: { type: "plain_text"; text: string }; value: string }> = [];
+  for (const row of rows ?? []) {
+    const start = parseTimeToMinutes(String(row.start_time).slice(0, 5));
+    const end = parseTimeToMinutes(String(row.end_time).slice(0, 5));
+    for (let cursor = start; cursor + durationMinutes <= end; cursor += 30) {
+      const label = minutesToTimeLabel(cursor);
+      options.push({ text: { type: "plain_text", text: label }, value: label });
+    }
+  }
+
+  if (!options.length) {
+    return [{ text: { type: "plain_text" as const, text: "No slots available for selected date/duration" }, value: NO_SLOT_VALUE }];
+  }
+  return options;
+}
+
+async function buildAvailabilityHint(supabase: any, trainerId: string, requestDate: string, hasSlots: boolean) {
+  if (!trainerId) return "Select trainer to see available weekdays.";
+  const { data: rows } = await supabase.from("trainer_availability").select("day_of_week").eq("trainer_id", trainerId);
+  const dayList = (rows ?? []).map((row: { day_of_week: number }) => row.day_of_week) as number[];
+  const uniqueDays = [...new Set(dayList)].sort((a, b) => a - b);
+  if (!uniqueDays.length) return "Trainer has no availability slots configured yet.";
+
+  const dayLabels = uniqueDays.map((day) => WEEKDAY_LABELS[day] ?? "").filter(Boolean).join(", ");
+  if (!requestDate) return `Trainer available on: ${dayLabels}`;
+
+  const selectedDay = dayOfWeekFromDate(requestDate);
+  if (!uniqueDays.includes(selectedDay)) {
+    return `Trainer available on: ${dayLabels}. Selected date is unavailable.`;
+  }
+  if (!hasSlots) {
+    return `Trainer available on: ${dayLabels}. Selected date has no slot for chosen duration.`;
+  }
+  return `Trainer available on: ${dayLabels}.`;
+}
+
+function getScheduleDraft(payload: any): ScheduleDraft {
+  const state = payload.view?.state?.values;
+  return {
+    title: getInput(state, "title_block", "title")?.value ?? "",
+    trainer_id: getInput(state, "trainer_block", "trainer_id")?.selected_option?.value ?? "",
+    request_date: getInput(state, "date_block", "request_date")?.selected_date ?? "",
+    duration_minutes: getInput(state, "duration_block", "duration_minutes")?.selected_option?.value ?? "",
+    start_time: getInput(state, "time_block", "start_time")?.selected_option?.value ?? "",
+    attendees_est: getInput(state, "attendees_block", "attendees_est")?.value ?? "0",
+    requirements: getInput(state, "requirements_block", "requirements")?.value ?? "",
+    target_user_base: getInput(state, "target_user_base_block", "target_user_base")?.value ?? ""
+  };
+}
+
+function buildScheduleModal(params: {
+  draft: ScheduleDraft;
+  trainerOptions: Array<{ text: { type: "plain_text"; text: string }; value: string }>;
+  timeOptions: Array<{ text: { type: "plain_text"; text: string }; value: string }>;
+  availabilityHint: string;
+  privateMetadata: string;
+}) {
+  const { draft, trainerOptions, timeOptions, availabilityHint, privateMetadata } = params;
+  const selectedDuration = durationOptions().find((opt) => opt.value === draft.duration_minutes);
+  const selectedTrainer = trainerOptions.find((opt) => opt.value === draft.trainer_id);
+  const selectedStartTime = timeOptions.find((opt) => opt.value === draft.start_time);
+
+  return {
+    type: "modal",
+    callback_id: "webinar_schedule_modal",
+    title: { type: "plain_text", text: "Schedule Webinar" },
+    submit: { type: "plain_text", text: "Create" },
+    close: { type: "plain_text", text: "Cancel" },
+    private_metadata: privateMetadata,
+    blocks: [
+      {
+        type: "input",
+        block_id: "title_block",
+        label: { type: "plain_text", text: "Title" },
+        element: { type: "plain_text_input", action_id: "title", placeholder: { type: "plain_text", text: "Webinar title" }, initial_value: draft.title || undefined }
+      },
+      {
+        type: "input",
+        block_id: "trainer_block",
+        dispatch_action: true,
+        label: { type: "plain_text", text: "Trainer" },
+        element: {
+          type: "static_select",
+          action_id: "trainer_id",
+          placeholder: { type: "plain_text", text: "Select trainer" },
+          options: trainerOptions,
+          ...(selectedTrainer ? { initial_option: selectedTrainer } : {})
+        }
+      },
+      {
+        type: "input",
+        block_id: "date_block",
+        dispatch_action: true,
+        label: { type: "plain_text", text: "Webinar Date" },
+        element: {
+          type: "datepicker",
+          action_id: "request_date",
+          placeholder: { type: "plain_text", text: "Select date" },
+          ...(draft.request_date ? { initial_date: draft.request_date } : {})
+        }
+      },
+      {
+        type: "context",
+        elements: [{ type: "mrkdwn", text: availabilityHint }]
+      },
+      {
+        type: "input",
+        block_id: "duration_block",
+        dispatch_action: true,
+        label: { type: "plain_text", text: "Duration" },
+        element: {
+          type: "static_select",
+          action_id: "duration_minutes",
+          placeholder: { type: "plain_text", text: "Select duration" },
+          options: durationOptions(),
+          ...(selectedDuration ? { initial_option: selectedDuration } : {})
+        }
+      },
+      {
+        type: "input",
+        block_id: "time_block",
+        label: { type: "plain_text", text: "Available Timing (IST)" },
+        element: {
+          type: "static_select",
+          action_id: "start_time",
+          placeholder: { type: "plain_text", text: "Select start time" },
+          options: timeOptions,
+          ...(selectedStartTime ? { initial_option: selectedStartTime } : {})
+        }
+      },
+      {
+        type: "input",
+        block_id: "attendees_block",
+        optional: true,
+        label: { type: "plain_text", text: "Expected Attendees" },
+        element: { type: "plain_text_input", action_id: "attendees_est", placeholder: { type: "plain_text", text: "e.g. 120" }, initial_value: draft.attendees_est || undefined }
+      },
+      {
+        type: "input",
+        block_id: "requirements_block",
+        optional: true,
+        label: { type: "plain_text", text: "Requirements" },
+        element: { type: "plain_text_input", action_id: "requirements", multiline: true, initial_value: draft.requirements || undefined }
+      },
+      {
+        type: "input",
+        block_id: "target_user_base_block",
+        optional: true,
+        label: { type: "plain_text", text: "Target User Base" },
+        element: { type: "plain_text_input", action_id: "target_user_base", initial_value: draft.target_user_base || undefined }
+      }
     ]
   };
 }
 
 async function handleScheduleSubmitData(payload: any) {
-  const state = payload.view?.state?.values;
-  const collected = {
-    title: getInput(state, "title_block", "title")?.value ?? "",
-    trainer_id: getInput(state, "trainer_block", "trainer_id")?.selected_option?.value ?? "",
-    webinar_timing_ts: getInput(state, "timing_block", "webinar_timing_ts")?.selected_date_time ?? "",
-    attendees_est: getInput(state, "attendees_block", "attendees_est")?.value ?? "0",
-    duration_minutes: getInput(state, "duration_block", "duration_minutes")?.value ?? "60",
-    requirements: getInput(state, "requirements_block", "requirements")?.value ?? "",
-    target_user_base: getInput(state, "target_user_base_block", "target_user_base")?.value ?? "",
-    pre_webinar_link: getInput(state, "pre_link_block", "pre_webinar_link")?.value ?? "",
-    post_webinar_link: getInput(state, "post_link_block", "post_webinar_link")?.value ?? ""
+  const collected = getScheduleDraft(payload);
+  const durationValue = Number(collected.duration_minutes || 0);
+  return {
+    title: collected.title,
+    trainer_id: collected.trainer_id,
+    request_date: collected.request_date,
+    start_time: collected.start_time,
+    attendees_est: collected.attendees_est || "0",
+    duration_minutes: durationValue,
+    requirements: collected.requirements,
+    target_user_base: collected.target_user_base
   };
-
-  return collected;
 }
 
 function scheduleConfirmModal(data: z.infer<typeof slackWebinarSchema>, trainerName: string) {
-  const when = new Date(data.webinar_timing_ts * 1000).toUTCString();
+  const when = formatDate(combineDateTimeIst(data.request_date, data.start_time));
   return {
     type: "modal",
     callback_id: "webinar_schedule_confirm_modal",
@@ -416,7 +630,7 @@ function scheduleConfirmModal(data: z.infer<typeof slackWebinarSchema>, trainerN
         fields: [
           { type: "mrkdwn", text: `*Title*\n${data.title}` },
           { type: "mrkdwn", text: `*Trainer*\n${trainerName}` },
-          { type: "mrkdwn", text: `*Start (UTC)*\n${when}` },
+          { type: "mrkdwn", text: `*Start*\n${when}` },
           { type: "mrkdwn", text: `*Expected attendees*\n${data.attendees_est}` },
           { type: "mrkdwn", text: `*Duration*\n${data.duration_minutes} min` },
           { type: "mrkdwn", text: `*Target user base*\n${data.target_user_base || "-"}` }
@@ -430,7 +644,7 @@ async function handleScheduleConfirmed(payload: any, parsed: z.infer<typeof slac
   const actorId = payload.user?.id ?? "unknown";
   try {
     const supabase = createAdminClient() as any;
-    const startIso = new Date(parsed.webinar_timing_ts * 1000).toISOString();
+    const startIso = combineDateTimeIst(parsed.request_date, parsed.start_time);
     const { data: trainer } = await supabase.from("trainers").select("id, name").eq("id", parsed.trainer_id).maybeSingle();
     if (!trainer) {
       await dmUser(actorId, "Request submission failed: trainer not found.");
@@ -468,8 +682,6 @@ async function handleScheduleConfirmed(payload: any, parsed: z.infer<typeof slac
         trainer_id: trainer.id,
         requirements: parsed.requirements || null,
         target_user_base: parsed.target_user_base || null,
-        pre_webinar_link: normalizeUrl(parsed.pre_webinar_link),
-        post_webinar_link: normalizeUrl(parsed.post_webinar_link),
         duration_minutes: parsed.duration_minutes
       }
     });
@@ -501,6 +713,12 @@ async function handleScheduleConfirmed(payload: any, parsed: z.infer<typeof slac
 async function handleScheduleSubmit(payload: any) {
   const supabase = createAdminClient() as any;
   const collected = await handleScheduleSubmitData(payload);
+  if (collected.start_time === NO_SLOT_VALUE) {
+    return {
+      response_action: "errors",
+      errors: { time_block: "Select a valid available timing." }
+    };
+  }
   const parsed = slackWebinarSchema.safeParse(collected);
   if (!parsed.success) {
     const issue = parsed.error.issues[0];
@@ -521,7 +739,70 @@ async function handleScheduleSubmit(payload: any) {
     };
   }
 
+  const availableOptions = await buildAvailableTimeOptions(
+    supabase,
+    parsed.data.trainer_id,
+    parsed.data.request_date,
+    parsed.data.duration_minutes
+  );
+  const hasAvailableSlots = availableOptions.some((option) => option.value !== NO_SLOT_VALUE);
+  if (!hasAvailableSlots) {
+    return {
+      response_action: "errors",
+      errors: {
+        date_block: "Trainer is unavailable on selected date for chosen duration.",
+        time_block: "No available timing for this date and duration."
+      }
+    };
+  }
+  const startTimeValid = availableOptions.some((option) => option.value === parsed.data.start_time);
+  if (!startTimeValid) {
+    return {
+      response_action: "errors",
+      errors: {
+        time_block: "Please choose a valid available timing."
+      }
+    };
+  }
+
   return { response_action: "update", view: scheduleConfirmModal(parsed.data, trainer.name) };
+}
+
+async function handleScheduleModalBlockAction(payload: any) {
+  const callbackId = payload.view?.callback_id;
+  if (callbackId !== "webinar_schedule_modal") return false;
+
+  const actionId = payload.actions?.[0]?.action_id as string | undefined;
+  if (!actionId || !["trainer_id", "request_date", "duration_minutes", "start_time"].includes(actionId)) return false;
+
+  const supabase = createAdminClient() as any;
+  const draft = getScheduleDraft(payload);
+  const trainerOptions = await buildTrainerOptions(supabase);
+  const durationMinutes = Number(draft.duration_minutes || 0);
+  const timeOptions = await buildAvailableTimeOptions(supabase, draft.trainer_id, draft.request_date, durationMinutes);
+  const hasSlots = timeOptions.some((option) => option.value !== NO_SLOT_VALUE);
+  const availabilityHint = await buildAvailabilityHint(supabase, draft.trainer_id, draft.request_date, hasSlots);
+
+  if ((actionId === "trainer_id" || actionId === "request_date") && draft.start_time) {
+    draft.start_time = "";
+  } else if (actionId !== "start_time" && draft.start_time) {
+    const stillValid = timeOptions.some((option) => option.value === draft.start_time);
+    if (!stillValid) draft.start_time = "";
+  }
+
+  await slackApi("/views.update", {
+    view_id: payload.view.id,
+    hash: payload.view.hash,
+    view: buildScheduleModal({
+      draft,
+      trainerOptions,
+      timeOptions,
+      availabilityHint,
+      privateMetadata: payload.view.private_metadata ?? "{}"
+    })
+  });
+
+  return true;
 }
 
 async function handleBpConfirm(payload: any) {
@@ -543,8 +824,6 @@ async function handleBpConfirm(payload: any) {
 
   const { data: req } = await supabase.from("webinar_requests").select("*").eq("id", requestId).maybeSingle();
   if (!req) return;
-
-  await upsertWebinarForRequest(supabase, req, { id: actorId, name: actorName });
 
   if (req.bp_channel_id && req.bp_message_ts) {
     await slackApi("/chat.update", {
@@ -593,17 +872,17 @@ async function handleBpRejectSubmit(payload: any) {
     await slackApi("/chat.update", {
       channel: req.bp_channel_id,
       ts: req.bp_message_ts,
-      text: `Rejected: ${req.topic}`,
+      text: `Declined: ${req.topic}`,
       blocks: [
         {
           type: "section",
-          text: { type: "mrkdwn", text: `❌ *Rejected* by ${actorName}\n*Reason:* ${reason}` }
+          text: { type: "mrkdwn", text: `❌ *Declined* by ${actorName}\n*Reason:* ${reason}` }
         }
       ]
     });
   }
 
-  await dmUser(req.employee_slack_id, `Your webinar request *${req.topic}* was rejected.\nReason: ${reason}`);
+  await dmUser(req.employee_slack_id, `Your webinar request *${req.topic}* was declined.\nReason: ${reason}`);
   return { response_action: "clear" };
 }
 
@@ -645,7 +924,7 @@ async function handleBpAltSubmit(payload: any) {
       blocks: [
         {
           type: "section",
-          text: { type: "mrkdwn", text: `📅 *Alternative suggested* by ${actorName}\n*Proposed time:* ${new Date(altIso).toUTCString()}` }
+          text: { type: "mrkdwn", text: `📅 *Alternative suggested* by ${actorName}\n*Proposed time:* ${formatDate(altIso)}` }
         }
       ]
     });
@@ -653,7 +932,7 @@ async function handleBpAltSubmit(payload: any) {
 
   await dmUser(
     req.employee_slack_id,
-    `BP suggested a new time for *${req.topic}* (${new Date(altIso).toUTCString()}).`,
+    `BP suggested a new time for *${req.topic}* (${formatDate(altIso)}).`,
     employeeAltDecisionBlocks(requestId)
   );
   return { response_action: "clear" };
@@ -682,7 +961,6 @@ async function handleEmployeeAcceptAlt(payload: any) {
 
   const { data: refreshed } = await supabase.from("webinar_requests").select("*").eq("id", requestId).maybeSingle();
   if (!refreshed) return;
-  await upsertWebinarForRequest(supabase, refreshed, { id: actorId, name: actorName });
 
   if (refreshed.bp_channel_id && refreshed.bp_message_ts) {
     await slackApi("/chat.update", {
@@ -699,6 +977,20 @@ async function handleEmployeeAcceptAlt(payload: any) {
   }
 
   await dmUser(actorId, `You accepted the new time for *${refreshed.topic}*.`);
+  const ctx = await resolveActionMessageContext(payload);
+  if (ctx.channelId && ctx.messageTs) {
+    await slackApi("/chat.update", {
+      channel: ctx.channelId,
+      ts: ctx.messageTs,
+      text: `Accepted alternative date for ${refreshed.topic}`,
+      blocks: [
+        {
+          type: "section",
+          text: { type: "mrkdwn", text: `✅ You accepted the new date for *${refreshed.topic}*.` }
+        }
+      ]
+    });
+  }
   await ensureChecklistAndPostToGrowth({ supabase, requestId, actorId, actorName });
 }
 
@@ -736,6 +1028,20 @@ async function handleEmployeeDeclineAlt(payload: any) {
   }
 
   await dmUser(actorId, `You declined the alternative time for *${req.topic}*. Request cancelled.`);
+  const ctx = await resolveActionMessageContext(payload);
+  if (ctx.channelId && ctx.messageTs) {
+    await slackApi("/chat.update", {
+      channel: ctx.channelId,
+      ts: ctx.messageTs,
+      text: `Declined alternative date for ${req.topic}`,
+      blocks: [
+        {
+          type: "section",
+          text: { type: "mrkdwn", text: `🚫 You declined the alternative date for *${req.topic}*.` }
+        }
+      ]
+    });
+  }
 }
 
 async function handleGrowthToggle(payload: any) {
@@ -798,6 +1104,11 @@ async function handleGrowthComplete(payload: any) {
     action: "growth_mark_complete",
     columnUpdates: { growth_slack_id: actorId }
   });
+
+  const { data: refreshed } = await supabase.from("webinar_requests").select("*").eq("id", requestId).maybeSingle();
+  if (refreshed) {
+    await upsertWebinarForRequest(supabase, refreshed, { id: actorId, name: actorName });
+  }
 
   if (req.growth_channel_id && req.growth_message_ts) {
     await slackApi("/chat.update", {
@@ -875,9 +1186,11 @@ export async function POST(request: Request) {
       if (!parsed) {
         return NextResponse.json({ response_action: "clear" }, { status: 200 });
       }
-      const response = await handleScheduleConfirmed(payload, parsed);
-      after(scheduleRevalidation);
-      return NextResponse.json(response, { status: 200 });
+      after(async () => {
+        await handleScheduleConfirmed(payload, parsed as z.infer<typeof slackWebinarSchema>);
+        scheduleRevalidation();
+      });
+      return NextResponse.json({ response_action: "clear" }, { status: 200 });
     }
     if (callbackId === "bp_reject_modal") {
       const response = await handleBpRejectSubmit(payload);
@@ -893,14 +1206,22 @@ export async function POST(request: Request) {
   }
 
   if (payload.type === "block_actions") {
+    const handledScheduleModal = await handleScheduleModalBlockAction(payload);
+    if (handledScheduleModal) {
+      return NextResponse.json({ ok: true }, { status: 200 });
+    }
+
     const actionId = payload.actions?.[0]?.action_id as string | undefined;
     if (!actionId) return NextResponse.json({ ok: true }, { status: 200 });
 
-    if (actionId === "bp_reject") {
-      return NextResponse.json({ response_action: "push", view: rejectReasonModal(getRequestIdFromAction(payload) ?? "") }, { status: 200 });
-    }
-    if (actionId === "bp_suggest_alt") {
-      return NextResponse.json({ response_action: "push", view: altDateModal(getRequestIdFromAction(payload) ?? "") }, { status: 200 });
+    if (actionId === "bp_reject" || actionId === "bp_suggest_alt") {
+      const triggerId = payload.trigger_id as string | undefined;
+      const requestId = getRequestIdFromAction(payload) ?? "";
+      if (!triggerId || !requestId) return NextResponse.json({ ok: true }, { status: 200 });
+
+      const view = actionId === "bp_reject" ? rejectReasonModal(requestId) : altDateModal(requestId);
+      await slackApi("/views.open", { trigger_id: triggerId, view });
+      return NextResponse.json({ ok: true }, { status: 200 });
     }
 
     after(async () => {
