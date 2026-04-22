@@ -97,11 +97,8 @@ export function WebinarCalendar({
                 <p className="mb-2 text-xs font-semibold">{format(day, "d")}</p>
                 <div className="space-y-1">
                   {dayEvents.slice(0, 3).map((event) => (
-                    <a
+                    <div
                       key={event.id}
-                      href={event.googleLink ?? "#"}
-                      target="_blank"
-                      rel="noreferrer"
                       className={cn(
                         "block rounded-md px-2 py-1 text-[11px] leading-tight",
                         event.status === "cancelled"
@@ -114,7 +111,7 @@ export function WebinarCalendar({
                       <p className="truncate font-medium">{event.title}</p>
                       <p className="truncate opacity-80">{formatDate(event.start)}</p>
                       {event.trainerName ? <p className="truncate opacity-80">{event.trainerName}</p> : null}
-                    </a>
+                    </div>
                   ))}
                   {dayEvents.length > 3 ? <p className="text-[11px] text-muted-foreground">+{dayEvents.length - 3} more</p> : null}
                 </div>
@@ -167,11 +164,17 @@ export function WebinarCalendar({
                         {format(start, "p")} - {format(end, "p")} ({durationMinutes} min)
                       </p>
                       {event.trainerName ? <p className="text-sm text-muted-foreground">Trainer: {event.trainerName}</p> : null}
-                      {event.googleLink ? (
-                        <a href={event.googleLink} target="_blank" rel="noreferrer" className="mt-2 inline-block text-sm text-primary underline">
-                          Open Google Calendar Link
-                        </a>
-                      ) : null}
+                      <div className="mt-3">
+                        {event.googleLink ? (
+                          <Button type="button" size="sm" asChild>
+                            <a href={event.googleLink} target="_blank" rel="noreferrer">
+                              Add to Calendar
+                            </a>
+                          </Button>
+                        ) : (
+                          <p className="text-xs text-muted-foreground">Calendar link not available.</p>
+                        )}
+                      </div>
                     </div>
                   );
                 })}
