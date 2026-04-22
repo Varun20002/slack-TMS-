@@ -6,6 +6,7 @@ create table if not exists public.profiles (
   full_name text not null,
   phone text,
   email text not null unique,
+  must_change_password boolean not null default false,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
@@ -27,6 +28,7 @@ create table if not exists public.trainers (
   certifications text,
   social_media_handles jsonb,
   profile_image_url text,
+  temporary_password text,
   average_rating numeric(4,2) not null default 0,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
@@ -46,6 +48,8 @@ create table if not exists public.webinars (
   pre_webinar_link text,
   post_webinar_link text,
   google_calendar_embed_url text,
+  google_event_id text,
+  google_calendar_sync_error text,
   status text not null check (status in ('upcoming', 'completed', 'cancelled')) default 'upcoming',
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
@@ -59,8 +63,16 @@ alter table public.webinars
 add column if not exists slack_requester_id text;
 alter table public.webinars
 add column if not exists slack_requester_name text;
+alter table public.webinars
+add column if not exists google_event_id text;
+alter table public.webinars
+add column if not exists google_calendar_sync_error text;
 alter table public.trainers
 add column if not exists profile_image_url text;
+alter table public.trainers
+add column if not exists temporary_password text;
+alter table public.profiles
+add column if not exists must_change_password boolean not null default false;
 
 create table if not exists public.webinar_requests (
   id uuid primary key default gen_random_uuid(),
@@ -140,6 +152,26 @@ create table if not exists public.trainer_availability (
   constraint trainer_availability_time_valid check (start_time < end_time)
 );
 
+create table if not exists public.trainer_activation_links (
+  id uuid primary key default gen_random_uuid(),
+  profile_id uuid not null references public.profiles(id) on delete cascade,
+  trainer_id uuid not null references public.trainers(id) on delete cascade,
+  token_hash text not null unique,
+  created_by uuid references public.profiles(id) on delete set null,
+  created_at timestamptz not null default now(),
+  consumed_at timestamptz
+);
+
+create table if not exists public.trainer_google_connections (
+  trainer_id uuid primary key references public.trainers(id) on delete cascade,
+  encrypted_refresh_token text not null,
+  calendar_id text not null default 'primary',
+  google_email text,
+  connected_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  last_error text
+);
+
 create table if not exists public.rating_upload_batches (
   id uuid primary key default gen_random_uuid(),
   uploaded_by uuid not null references public.profiles(id) on delete cascade,
@@ -188,6 +220,12 @@ create index if not exists idx_webinars_trainer_id on public.webinars(trainer_id
 create index if not exists idx_webinars_timing on public.webinars(webinar_timing);
 create index if not exists idx_ratings_trainer_id on public.trainer_ratings(trainer_id);
 create index if not exists idx_availability_trainer_day on public.trainer_availability(trainer_id, day_of_week);
+create index if not exists idx_activation_links_profile on public.trainer_activation_links(profile_id);
+create index if not exists idx_activation_links_trainer on public.trainer_activation_links(trainer_id);
+create index if not exists idx_google_connections_trainer on public.trainer_google_connections(trainer_id);
+create unique index if not exists idx_activation_links_active_profile
+on public.trainer_activation_links(profile_id)
+where consumed_at is null;
 
 create or replace function public.set_updated_at()
 returns trigger
@@ -310,6 +348,8 @@ alter table public.trainers enable row level security;
 alter table public.webinars enable row level security;
 alter table public.webinar_metrics enable row level security;
 alter table public.trainer_availability enable row level security;
+alter table public.trainer_activation_links enable row level security;
+alter table public.trainer_google_connections enable row level security;
 alter table public.rating_upload_batches enable row level security;
 alter table public.trainer_ratings enable row level security;
 alter table public.badges enable row level security;
@@ -390,6 +430,18 @@ create policy availability_trainer_manage_own on public.trainer_availability
 for all to authenticated
 using (trainer_id = public.current_trainer_id())
 with check (trainer_id = public.current_trainer_id());
+
+drop policy if exists activation_links_admin_manage on public.trainer_activation_links;
+create policy activation_links_admin_manage on public.trainer_activation_links
+for all to authenticated
+using (public.current_user_role() = 'admin')
+with check (public.current_user_role() = 'admin');
+
+drop policy if exists google_connections_admin_manage on public.trainer_google_connections;
+create policy google_connections_admin_manage on public.trainer_google_connections
+for all to authenticated
+using (public.current_user_role() = 'admin')
+with check (public.current_user_role() = 'admin');
 
 drop policy if exists batches_admin_only on public.rating_upload_batches;
 create policy batches_admin_only on public.rating_upload_batches

@@ -29,7 +29,18 @@ export async function updateSession(request: NextRequest) {
   const isAdminRoute = path.startsWith("/admin");
   const isTrainerRoute = path.startsWith("/trainer");
   const isLoginRoute = path.startsWith("/login/admin") || path.startsWith("/login/trainer");
+  const isTrainerFirstLoginRoute = path.startsWith("/trainer/first-login");
   const isSwitchMode = request.nextUrl.searchParams.get("switch") === "1";
+  const userId = user?.id ?? null;
+
+  async function loadProfile() {
+    if (!userId) return null;
+    const withFlag = await (supabase as any).from("profiles").select("role, must_change_password").eq("id", userId).maybeSingle();
+    if (!withFlag.error) return withFlag.data;
+    const fallback = await (supabase as any).from("profiles").select("role").eq("id", userId).maybeSingle();
+    if (!fallback.data) return null;
+    return { ...fallback.data, must_change_password: false };
+  }
 
   if (!user && (isAdminRoute || isTrainerRoute)) {
     const next = isAdminRoute ? "/login/admin" : "/login/trainer";
@@ -37,16 +48,25 @@ export async function updateSession(request: NextRequest) {
   }
 
   if (user && isLoginRoute && !isSwitchMode) {
-    const { data: profile } = await (supabase as any).from("profiles").select("role").eq("id", user.id).maybeSingle();
+    const profile = await loadProfile();
+    if (profile?.role === "trainer" && profile.must_change_password) {
+      return NextResponse.redirect(new URL("/trainer/first-login", request.url));
+    }
     if (profile?.role === "admin") return NextResponse.redirect(new URL("/admin/dashboard", request.url));
     if (profile?.role === "trainer") return NextResponse.redirect(new URL("/trainer/dashboard", request.url));
   }
 
   if (user && (isAdminRoute || isTrainerRoute)) {
-    const { data: profile } = await (supabase as any).from("profiles").select("role").eq("id", user.id).maybeSingle();
+    const profile = await loadProfile();
     if (!profile) return NextResponse.redirect(new URL("/", request.url));
     if (isAdminRoute && profile.role !== "admin") return NextResponse.redirect(new URL("/trainer/dashboard", request.url));
     if (isTrainerRoute && profile.role !== "trainer") return NextResponse.redirect(new URL("/admin/dashboard", request.url));
+    if (isTrainerRoute && profile.role === "trainer" && profile.must_change_password && !isTrainerFirstLoginRoute) {
+      return NextResponse.redirect(new URL("/trainer/first-login", request.url));
+    }
+    if (isTrainerFirstLoginRoute && profile.role === "trainer" && !profile.must_change_password) {
+      return NextResponse.redirect(new URL("/trainer/dashboard", request.url));
+    }
   }
 
   return response;

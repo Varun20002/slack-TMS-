@@ -6,6 +6,16 @@ export const loginSchema = z.object({
   role: z.enum(["admin", "trainer"])
 });
 
+export const trainerFirstLoginSchema = z
+  .object({
+    password: z.string().min(8, "Password must be at least 8 characters."),
+    confirmPassword: z.string().min(8, "Please confirm your password.")
+  })
+  .refine((data) => data.password === data.confirmPassword, {
+    message: "Passwords do not match.",
+    path: ["confirmPassword"]
+  });
+
 export const trainerSchema = z.object({
   name: z.string().min(2),
   experience: z.coerce.number().min(0).max(50),
@@ -20,9 +30,9 @@ export const trainerSchema = z.object({
   email: z.string().email(),
   languages_spoken: z.string().min(2),
   base_city: z.string().min(2),
-  credentials_or_claim_to_fame: z.string().optional(),
-  certifications: z.string().optional(),
-  social_media_handles: z.string().optional()
+  credentials_or_claim_to_fame: z.string().min(2, "Credentials / claim to fame is required."),
+  certifications: z.string().min(2, "Certifications are required."),
+  social_media_handles: z.string().min(2, "Social media handles are required.")
 });
 
 export const webinarSchema = z.object({

@@ -26,6 +26,8 @@ type UpcomingWebinar = {
   requirements: string | null;
   pre_webinar_link: string | null;
   post_webinar_link: string | null;
+  google_event_id: string | null;
+  google_calendar_sync_error: string | null;
   status: "upcoming" | "completed" | "cancelled";
   trainers?: { name: string } | null;
 };
@@ -69,6 +71,17 @@ export function UpcomingWebinarsManager({ webinars, trainerOptions }: { webinars
               {item.trainers?.name ?? "Unassigned"} • {formatDate(item.webinar_timing)}
             </p>
             <p className="text-xs text-muted-foreground">Duration: {item.duration_minutes ?? 60} minutes</p>
+            <div className="mt-1 flex items-center gap-2">
+              <span className="text-xs text-muted-foreground">Google Sync:</span>
+              {item.google_calendar_sync_error ? (
+                <Badge className="bg-rose-100 text-rose-700 hover:bg-rose-100">Error</Badge>
+              ) : item.google_event_id ? (
+                <Badge className="bg-emerald-100 text-emerald-700 hover:bg-emerald-100">Connected</Badge>
+              ) : (
+                <Badge className="bg-amber-100 text-amber-700 hover:bg-amber-100">Pending / Not Connected</Badge>
+              )}
+            </div>
+            {item.google_calendar_sync_error ? <p className="mt-1 text-xs text-destructive">{item.google_calendar_sync_error}</p> : null}
             <p className="mt-1 text-sm">{item.target_user_base ?? "No target audience defined yet."}</p>
             <div className="mt-3 flex flex-wrap gap-2">
               <Button type="button" variant="outline" size="sm" onClick={() => setEditingId(isEditing ? null : item.id)}>

@@ -11,6 +11,7 @@ export type Database = {
           full_name: string;
           phone: string | null;
           email: string;
+          must_change_password: boolean;
           created_at: string;
           updated_at: string;
         };
@@ -20,6 +21,7 @@ export type Database = {
           full_name: string;
           phone?: string | null;
           email: string;
+          must_change_password?: boolean;
           created_at?: string;
           updated_at?: string;
         };
@@ -43,6 +45,7 @@ export type Database = {
           certifications: string | null;
           social_media_handles: Record<string, string> | null;
           profile_image_url: string | null;
+          temporary_password: string | null;
           average_rating: number;
           created_at: string;
           updated_at: string;
@@ -67,6 +70,8 @@ export type Database = {
           pre_webinar_link: string | null;
           post_webinar_link: string | null;
           google_calendar_embed_url: string | null;
+          google_event_id: string | null;
+          google_calendar_sync_error: string | null;
           status: WebinarStatus;
           created_at: string;
           updated_at: string;
@@ -115,6 +120,39 @@ export type Database = {
           updated_at?: string;
         };
         Update: Partial<Omit<Database["public"]["Tables"]["trainer_availability"]["Row"], "id" | "created_at">>;
+      };
+      trainer_activation_links: {
+        Row: {
+          id: string;
+          profile_id: string;
+          trainer_id: string;
+          token_hash: string;
+          created_by: string | null;
+          created_at: string;
+          consumed_at: string | null;
+        };
+        Insert: Omit<Database["public"]["Tables"]["trainer_activation_links"]["Row"], "id" | "created_at" | "consumed_at"> & {
+          id?: string;
+          created_at?: string;
+          consumed_at?: string | null;
+        };
+        Update: Partial<Omit<Database["public"]["Tables"]["trainer_activation_links"]["Row"], "id" | "created_at">>;
+      };
+      trainer_google_connections: {
+        Row: {
+          trainer_id: string;
+          encrypted_refresh_token: string;
+          calendar_id: string;
+          google_email: string | null;
+          connected_at: string;
+          updated_at: string;
+          last_error: string | null;
+        };
+        Insert: Omit<Database["public"]["Tables"]["trainer_google_connections"]["Row"], "connected_at" | "updated_at"> & {
+          connected_at?: string;
+          updated_at?: string;
+        };
+        Update: Partial<Omit<Database["public"]["Tables"]["trainer_google_connections"]["Row"], "trainer_id">>;
       };
       rating_upload_batches: {
         Row: {

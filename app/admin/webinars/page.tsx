@@ -39,7 +39,9 @@ export default async function AdminWebinarsPage() {
       attendees: metric?.attendees_count ?? 0,
       rating: Number(metric?.rating ?? 0),
       successRate: Number(metric?.success_rate ?? 0),
-      postWebinarLink: item.post_webinar_link ?? null
+      postWebinarLink: item.post_webinar_link ?? null,
+      googleSyncStatus: item.google_calendar_sync_error ? "error" : item.google_event_id ? "connected" : "pending",
+      googleSyncError: item.google_calendar_sync_error ?? null
     };
   });
 

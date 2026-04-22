@@ -89,7 +89,12 @@ Create `.env.local`:
 ```env
 NEXT_PUBLIC_SUPABASE_URL="https://your-project-ref.supabase.co"
 NEXT_PUBLIC_SUPABASE_ANON_KEY="your-anon-key"
+NEXT_PUBLIC_APP_URL="http://localhost:3000"
 SUPABASE_SERVICE_ROLE_KEY="your-service-role-key"
+GOOGLE_OAUTH_CLIENT_ID="your-google-client-id"
+GOOGLE_OAUTH_CLIENT_SECRET="your-google-client-secret"
+GOOGLE_OAUTH_REDIRECT_URI="http://localhost:3000/api/google/calendar/callback"
+GOOGLE_TOKEN_ENCRYPTION_KEY="base64-32-byte-key"
 SLACK_BOT_TOKEN="xoxb-..."
 SLACK_SIGNING_SECRET="your-slack-signing-secret"
 ```
@@ -107,6 +112,25 @@ SLACK_SIGNING_SECRET="your-slack-signing-secret"
    - [`supabase/seed.sql`](/Users/debjit.saha/Documents/TMS/supabase/seed.sql)
 5. Run `seed.sql`.
 
+### Trainer onboarding first-login flow
+
+- When admin creates a trainer from `/admin/trainers`, the app now creates:
+  - Supabase Auth user (trainer)
+  - `profiles` row (role=`trainer`)
+  - linked `trainers` row
+- generates a temporary password and stores it in trainer record
+- marks profile as `must_change_password = true`
+- Trainer signs in from regular `/login/trainer` using temporary password.
+- On first login, trainer is forced to `/trainer/first-login` to set a new password.
+- After successful password update, trainer status becomes activated.
+
+### Google Calendar sync flow
+
+- Trainer connects Google Calendar from `/trainer/profile` once.
+- OAuth refresh token is encrypted before storage.
+- On admin webinar create/update/delete, app syncs events in connected trainer calendar.
+- If sync fails, webinar still saves and `google_calendar_sync_error` is updated for safe retry/reconnect.
+
 ## Local Development
 
 ```bash
@@ -123,7 +147,12 @@ Open [http://localhost:3000](http://localhost:3000).
 3. Add environment variables:
    - `NEXT_PUBLIC_SUPABASE_URL`
    - `NEXT_PUBLIC_SUPABASE_ANON_KEY`
+   - `NEXT_PUBLIC_APP_URL`
    - `SUPABASE_SERVICE_ROLE_KEY`
+   - `GOOGLE_OAUTH_CLIENT_ID`
+   - `GOOGLE_OAUTH_CLIENT_SECRET`
+   - `GOOGLE_OAUTH_REDIRECT_URI`
+   - `GOOGLE_TOKEN_ENCRYPTION_KEY`
    - `SLACK_BOT_TOKEN`
    - `SLACK_SIGNING_SECRET`
 4. Deploy.

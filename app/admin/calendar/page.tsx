@@ -33,5 +33,12 @@ export default async function AdminCalendarPage() {
     };
   });
 
-  return <WebinarCalendar events={events} title="Admin Webinar Calendar" description="All scheduled webinars appear here automatically." />;
+  return (
+    <WebinarCalendar
+      events={events}
+      title="Admin Webinar Calendar"
+      description="All scheduled webinars appear here automatically."
+      interactiveDateDetails
+    />
+  );
 }

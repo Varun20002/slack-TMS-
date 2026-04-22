@@ -5,6 +5,7 @@ import { toast } from "sonner";
 
 import { updateWebinarPostLinkAction } from "@/lib/actions";
 import { formatPercent } from "@/lib/utils";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -17,6 +18,8 @@ type PastWebinarRow = {
   rating: number;
   successRate: number;
   postWebinarLink: string | null;
+  googleSyncStatus: "connected" | "error" | "pending";
+  googleSyncError: string | null;
 };
 
 const PAGE_SIZE = 10;
@@ -61,6 +64,7 @@ export function PastWebinarsTable({ rows }: { rows: PastWebinarRow[] }) {
             <TableHead>Attendees</TableHead>
             <TableHead>Rating</TableHead>
             <TableHead>Success</TableHead>
+            <TableHead>Google Sync</TableHead>
             <TableHead>Post-webinar Link</TableHead>
           </TableRow>
         </TableHeader>
@@ -72,6 +76,18 @@ export function PastWebinarsTable({ rows }: { rows: PastWebinarRow[] }) {
               <TableCell>{row.attendees}</TableCell>
               <TableCell>{row.rating.toFixed(2)}</TableCell>
               <TableCell>{formatPercent(row.successRate)}</TableCell>
+              <TableCell>
+                {row.googleSyncStatus === "connected" ? (
+                  <Badge className="bg-emerald-100 text-emerald-700 hover:bg-emerald-100">Connected</Badge>
+                ) : row.googleSyncStatus === "error" ? (
+                  <div className="space-y-1">
+                    <Badge className="bg-rose-100 text-rose-700 hover:bg-rose-100">Error</Badge>
+                    {row.googleSyncError ? <p className="max-w-[260px] text-xs text-destructive">{row.googleSyncError}</p> : null}
+                  </div>
+                ) : (
+                  <Badge className="bg-amber-100 text-amber-700 hover:bg-amber-100">Pending / Not Connected</Badge>
+                )}
+              </TableCell>
               <TableCell>
                 {editingId === row.id ? (
                   <div className="flex min-w-[280px] items-center gap-2">
@@ -110,7 +126,7 @@ export function PastWebinarsTable({ rows }: { rows: PastWebinarRow[] }) {
           ))}
           {!paginatedRows.length ? (
             <TableRow>
-              <TableCell colSpan={6} className="text-sm text-muted-foreground">
+              <TableCell colSpan={7} className="text-sm text-muted-foreground">
                 No past webinars.
               </TableCell>
             </TableRow>
@@ -134,4 +150,3 @@ export function PastWebinarsTable({ rows }: { rows: PastWebinarRow[] }) {
     </div>
   );
 }
-
