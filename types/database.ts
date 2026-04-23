@@ -46,12 +46,21 @@ export type Database = {
           social_media_handles: Record<string, string> | null;
           profile_image_url: string | null;
           temporary_password: string | null;
+          session_rating_avg: number;
+          speaker_rating_avg: number;
+          coverage_rating_avg: number;
           average_rating: number;
           created_at: string;
           updated_at: string;
         };
-        Insert: Omit<Database["public"]["Tables"]["trainers"]["Row"], "id" | "average_rating" | "created_at" | "updated_at"> & {
+        Insert: Omit<
+          Database["public"]["Tables"]["trainers"]["Row"],
+          "id" | "average_rating" | "session_rating_avg" | "speaker_rating_avg" | "coverage_rating_avg" | "created_at" | "updated_at"
+        > & {
           id?: string;
+          session_rating_avg?: number;
+          speaker_rating_avg?: number;
+          coverage_rating_avg?: number;
           average_rating?: number;
           created_at?: string;
           updated_at?: string;

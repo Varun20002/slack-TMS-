@@ -1,5 +1,7 @@
 # Trainer Management System (Next.js + Supabase)
 
+Developer docs: [`docs/DEVELOPER_GUIDE.md`](/Users/debjit.saha/Documents/TMS/docs/DEVELOPER_GUIDE.md)
+
 Production-ready Trainer Management System built for restricted environments:
 - no local PostgreSQL
 - no Prisma/Sequelize

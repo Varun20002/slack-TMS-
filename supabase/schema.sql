@@ -29,6 +29,9 @@ create table if not exists public.trainers (
   social_media_handles jsonb,
   profile_image_url text,
   temporary_password text,
+  session_rating_avg numeric(4,2) not null default 0,
+  speaker_rating_avg numeric(4,2) not null default 0,
+  coverage_rating_avg numeric(4,2) not null default 0,
   average_rating numeric(4,2) not null default 0,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
@@ -71,6 +74,12 @@ alter table public.trainers
 add column if not exists profile_image_url text;
 alter table public.trainers
 add column if not exists temporary_password text;
+alter table public.trainers
+add column if not exists session_rating_avg numeric(4,2) not null default 0;
+alter table public.trainers
+add column if not exists speaker_rating_avg numeric(4,2) not null default 0;
+alter table public.trainers
+add column if not exists coverage_rating_avg numeric(4,2) not null default 0;
 alter table public.profiles
 add column if not exists must_change_password boolean not null default false;
 
@@ -286,7 +295,7 @@ immutable
 as $$
   select case
     when coalesce(reg, 0) = 0 then 0
-    else round((coalesce(att, 0)::numeric / reg::numeric) * (coalesce(first_ft, 0)::numeric / nullif(att, 0)::numeric), 4)
+    else round((coalesce(att, 0)::numeric / reg::numeric), 4)
   end;
 $$;
 

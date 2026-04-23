@@ -24,7 +24,8 @@ export function AvailabilityManager({
         className="grid gap-3 md:grid-cols-4"
         onSubmit={(event) => {
           event.preventDefault();
-          const formData = new FormData(event.currentTarget);
+          const formElement = event.currentTarget;
+          const formData = new FormData(formElement);
           startTransition(async () => {
             const res = await upsertAvailabilityAction(formData);
             if (!res.success) {
@@ -32,7 +33,7 @@ export function AvailabilityManager({
               return;
             }
             toast.success("Availability added");
-            event.currentTarget.reset();
+            formElement.reset();
           });
         }}
       >
@@ -67,7 +68,8 @@ export function AvailabilityManager({
         {slots.map((slot) => (
           <div key={slot.id} className="flex items-center justify-between rounded-lg border p-3">
             <p className="text-sm">
-              {days[slot.day_of_week]} • {slot.start_time.slice(0, 5)} - {slot.end_time.slice(0, 5)} ({slot.timezone})
+              {days[Number(slot.day_of_week)] ?? "Unknown"} • {String(slot.start_time ?? "").slice(0, 5)} - {String(slot.end_time ?? "").slice(0, 5)} (
+              {slot.timezone || "Asia/Kolkata"})
             </p>
             <Button
               variant="outline"

@@ -53,7 +53,7 @@ export default async function TrainerWebinarsPage() {
       <Card>
         <CardHeader>
           <CardTitle>Past Webinars</CardTitle>
-          <CardDescription>Performance outcomes and post-session assets.</CardDescription>
+          <CardDescription>Performance outcomes from completed sessions.</CardDescription>
         </CardHeader>
         <CardContent className="overflow-x-auto">
           <Table>
@@ -62,7 +62,6 @@ export default async function TrainerWebinarsPage() {
                 <TableHead>Title</TableHead>
                 <TableHead>Rating</TableHead>
                 <TableHead>Attendees</TableHead>
-                <TableHead>Post link</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -73,11 +72,6 @@ export default async function TrainerWebinarsPage() {
                     <TableCell>{item.title}</TableCell>
                     <TableCell>{Number(metric?.rating ?? 0).toFixed(2)}</TableCell>
                     <TableCell>{metric?.attendees_count ?? 0}</TableCell>
-                    <TableCell>
-                      <a href={item.post_webinar_link ?? "#"} target="_blank" rel="noreferrer" className="text-primary underline">
-                        Open
-                      </a>
-                    </TableCell>
                   </TableRow>
                 );
               })}

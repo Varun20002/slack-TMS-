@@ -14,27 +14,23 @@ type LeaderboardRow = {
   completedWebinars: number;
   totalAttendees: number;
   highestAudience: number;
-  score: number;
 };
 
-type SortKey = "averageRating" | "completedWebinars" | "totalAttendees" | "highestAudience" | "score";
+type SortKey = "averageRating" | "completedWebinars" | "totalAttendees" | "highestAudience";
 
 const SORT_FIELDS: Array<{ key: SortKey; label: string }> = [
   { key: "averageRating", label: "Rating" },
   { key: "completedWebinars", label: "Completed Webinars" },
   { key: "totalAttendees", label: "Total Attendees" },
-  { key: "highestAudience", label: "Highest Audience" },
-  { key: "score", label: "Score" }
+  { key: "highestAudience", label: "Highest Audience" }
 ];
 
 export function SortableLeaderboardTable({
   rows,
-  showCity = false,
-  showScore = false
+  showCity = false
 }: {
   rows: LeaderboardRow[];
   showCity?: boolean;
-  showScore?: boolean;
 }) {
   const [sortKey, setSortKey] = useState<SortKey>("averageRating");
   const [direction, setDirection] = useState<"asc" | "desc">("desc");
@@ -49,7 +45,7 @@ export function SortableLeaderboardTable({
     });
   }, [rows, sortKey, direction]);
 
-  const visibleSortFields = SORT_FIELDS.filter((field) => (field.key === "score" ? showScore : true));
+  const visibleSortFields = SORT_FIELDS;
 
   const onSort = (key: SortKey) => {
     if (sortKey === key) {
@@ -97,11 +93,9 @@ export function SortableLeaderboardTable({
             <TableCell>{row.completedWebinars}</TableCell>
             <TableCell>{row.totalAttendees}</TableCell>
             <TableCell>{row.highestAudience}</TableCell>
-            {showScore ? <TableCell>{row.score.toFixed(3)}</TableCell> : null}
           </TableRow>
         ))}
       </TableBody>
     </Table>
   );
 }
-

@@ -14,6 +14,7 @@ type PastWebinarRow = {
   id: string;
   title: string;
   trainerName: string;
+  registrations: number;
   attendees: number;
   rating: number;
   successRate: number;
@@ -61,9 +62,10 @@ export function PastWebinarsTable({ rows }: { rows: PastWebinarRow[] }) {
           <TableRow>
             <TableHead>Title</TableHead>
             <TableHead>Trainer</TableHead>
+            <TableHead>Registrations</TableHead>
             <TableHead>Attendees</TableHead>
+            <TableHead>Attendance Conversion</TableHead>
             <TableHead>Rating</TableHead>
-            <TableHead>Success</TableHead>
             <TableHead>Google Sync</TableHead>
             <TableHead>Post-webinar Link</TableHead>
           </TableRow>
@@ -73,9 +75,10 @@ export function PastWebinarsTable({ rows }: { rows: PastWebinarRow[] }) {
             <TableRow key={row.id}>
               <TableCell>{row.title}</TableCell>
               <TableCell>{row.trainerName}</TableCell>
+              <TableCell>{row.registrations}</TableCell>
               <TableCell>{row.attendees}</TableCell>
-              <TableCell>{row.rating.toFixed(2)}</TableCell>
               <TableCell>{formatPercent(row.successRate)}</TableCell>
+              <TableCell>{row.rating.toFixed(2)}</TableCell>
               <TableCell>
                 {row.googleSyncStatus === "connected" ? (
                   <Badge className="bg-emerald-100 text-emerald-700 hover:bg-emerald-100">Connected</Badge>
@@ -126,7 +129,7 @@ export function PastWebinarsTable({ rows }: { rows: PastWebinarRow[] }) {
           ))}
           {!paginatedRows.length ? (
             <TableRow>
-              <TableCell colSpan={7} className="text-sm text-muted-foreground">
+              <TableCell colSpan={8} className="text-sm text-muted-foreground">
                 No past webinars.
               </TableCell>
             </TableRow>

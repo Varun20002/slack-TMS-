@@ -742,20 +742,46 @@ export async function uploadRatingsCsvAction(formData: FormData): Promise<Action
   const profile = await requireRole("admin");
   const file = formData.get("file");
   if (!(file instanceof File)) return { success: false, message: "Please upload a CSV file." };
+  const webinarId = String(formData.get("webinar_id") ?? "").trim();
+  const registrationsCount = Number(formData.get("registrations_count") ?? "");
+  const attendeesCount = Number(formData.get("attendees_count") ?? "");
+  if (!webinarId) return { success: false, message: "Please select a webinar before upload." };
+  if (!Number.isFinite(registrationsCount) || registrationsCount <= 0) return { success: false, message: "Enter a valid registrations count." };
+  if (!Number.isFinite(attendeesCount) || attendeesCount < 0) return { success: false, message: "Enter a valid attendees count." };
+  if (attendeesCount > registrationsCount) return { success: false, message: "Attendees cannot be greater than registrations." };
 
   const text = await file.text();
-  const parsed = Papa.parse<{ trainer_email: string; webinar_id?: string; rating: string }>(text, {
-    header: true,
-    skipEmptyLines: true
-  });
-  if (parsed.errors.length > 0) {
-    return { success: false, message: `CSV parsing failed: ${parsed.errors[0]?.message}` };
+  const normalize = (value: string | null | undefined) => String(value ?? "").trim().toLowerCase().replace(/\s+/g, " ");
+  const compact = (value: string | null | undefined) => normalize(value).replace(/[^a-z0-9]/g, "");
+  const parseRating = (value: string | null | undefined) => {
+    const parsed = Number(String(value ?? "").trim());
+    return Number.isFinite(parsed) && parsed >= 1 && parsed <= 5 ? parsed : null;
+  };
+
+  const gridParse = Papa.parse<string[]>(text, { header: false, skipEmptyLines: false });
+  if (gridParse.errors.length > 0) {
+    return { success: false, message: `CSV parsing failed: ${gridParse.errors[0]?.message}` };
   }
 
-  const rows = parsed.data.filter((row) => row.trainer_email && row.rating);
-  if (!rows.length) return { success: false, message: "CSV has no valid rows." };
+  const grid = gridParse.data ?? [];
+  const surveyHeaderIndex = grid.findIndex((row) => {
+    const headers = row.map((cell) => normalize(cell));
+    return headers[0] === "#" && headers.some((cell) => cell.includes("meeting/webinar id")) && headers.some((cell) => cell.includes("session overall"));
+  });
 
   const supabase = (await createClient()) as any;
+  const { data: selectedWebinar, error: selectedWebinarError } = await supabase
+    .from("webinars")
+    .select("id,title,trainer_id,status")
+    .eq("id", webinarId)
+    .maybeSingle();
+  if (selectedWebinarError || !selectedWebinar) {
+    return { success: false, message: selectedWebinarError?.message ?? "Selected webinar not found." };
+  }
+  if (selectedWebinar.status !== "completed") {
+    return { success: false, message: "Only completed webinars can be updated via survey CSV." };
+  }
+
   const { data: batch, error: batchError } = await supabase
     .from("rating_upload_batches")
     .insert({
@@ -767,32 +793,170 @@ export async function uploadRatingsCsvAction(formData: FormData): Promise<Action
 
   if (batchError || !batch) return { success: false, message: batchError?.message ?? "Unable to save upload batch." };
 
-  const trainerEmails = rows.map((row) => row.trainer_email.toLowerCase());
-  const { data: trainers, error: trainerFetchError } = await supabase.from("trainers").select("id,email").in("email", trainerEmails);
-  if (trainerFetchError) return { success: false, message: trainerFetchError.message };
+  if (surveyHeaderIndex === -1) {
+    const parsed = Papa.parse<{ trainer_email: string; webinar_id?: string; rating: string }>(text, {
+      header: true,
+      skipEmptyLines: true
+    });
+    if (parsed.errors.length > 0) {
+      return { success: false, message: `CSV parsing failed: ${parsed.errors[0]?.message}` };
+    }
 
-  const trainerMap = new Map((trainers ?? []).map((trainer) => [trainer.email.toLowerCase(), trainer.id]));
-  const ratingInserts = rows
-    .map((row) => ({
-      trainer_id: trainerMap.get(row.trainer_email.toLowerCase()) ?? "",
-      webinar_id: row.webinar_id || null,
-      upload_batch_id: batch.id,
-      rating: Number(row.rating),
-      source: "csv"
-    }))
-    .filter((row) => row.trainer_id && !Number.isNaN(row.rating));
+    const rows = parsed.data.filter((row) => row.trainer_email && row.rating);
+    if (!rows.length) return { success: false, message: "CSV has no valid rows." };
 
-  if (!ratingInserts.length) {
-    return { success: false, message: "No rows matched existing trainers. Use trainer_email from trainers table." };
+    const trainerEmails = rows.map((row) => row.trainer_email.toLowerCase());
+    const { data: trainers, error: trainerFetchError } = await supabase.from("trainers").select("id,email").in("email", trainerEmails);
+    if (trainerFetchError) return { success: false, message: trainerFetchError.message };
+
+    const trainerMap = new Map((trainers ?? []).map((trainer) => [trainer.email.toLowerCase(), trainer.id]));
+    const ratingInserts = rows
+      .map((row) => ({
+        trainer_id: trainerMap.get(row.trainer_email.toLowerCase()) ?? "",
+        webinar_id: webinarId,
+        upload_batch_id: batch.id,
+        rating: Number(row.rating),
+        source: "csv"
+      }))
+      .filter((row) => row.trainer_id && !Number.isNaN(row.rating));
+
+    if (!ratingInserts.length) {
+      return { success: false, message: "No rows matched existing trainers. Use trainer_email from trainers table." };
+    }
+
+    const { error: ratingError } = await supabase.from("trainer_ratings").insert(ratingInserts);
+    if (ratingError) return { success: false, message: ratingError.message };
+
+    for (const trainerId of new Set(ratingInserts.map((item) => item.trainer_id))) {
+      const { data: ratings } = await supabase.from("trainer_ratings").select("rating").eq("trainer_id", trainerId);
+      const average = ratings && ratings.length ? ratings.reduce((sum, item) => sum + item.rating, 0) / ratings.length : 0;
+      await supabase.from("trainers").update({ average_rating: Number(average.toFixed(2)) }).eq("id", trainerId);
+    }
+    await supabase.from("webinar_metrics").upsert(
+      {
+        webinar_id: webinarId,
+        registrations_count: registrationsCount,
+        attendees_count: attendeesCount,
+        first_time_future_traders_count: attendeesCount
+      },
+      { onConflict: "webinar_id" }
+    );
+
+    revalidatePath("/admin/dashboard");
+    revalidatePath("/admin/trainers");
+    revalidatePath("/admin/webinars");
+    revalidatePath("/trainer/dashboard");
+    revalidatePath("/trainer/leaderboard");
+    return { success: true, message: `Uploaded ${ratingInserts.length} ratings.` };
   }
 
-  const { error: ratingError } = await supabase.from("trainer_ratings").insert(ratingInserts);
-  if (ratingError) return { success: false, message: ratingError.message };
+  const surveyHeaders = grid[surveyHeaderIndex].map((cell) => normalize(cell));
+  const findHeaderIndex = (keywords: string[]) => surveyHeaders.findIndex((header) => keywords.every((k) => header.includes(k)));
+  const topicIndex = findHeaderIndex(["topic"]);
+  const sessionIndex = findHeaderIndex(["session overall"]);
+  const speakerIndex = findHeaderIndex(["speaker overall"]);
+  const coverageIndex = findHeaderIndex(["topic covered"]);
 
-  for (const trainerId of new Set(ratingInserts.map((item) => item.trainer_id))) {
-    const { data: ratings } = await supabase.from("trainer_ratings").select("rating").eq("trainer_id", trainerId);
-    const average = ratings && ratings.length ? ratings.reduce((sum, item) => sum + item.rating, 0) / ratings.length : 0;
-    await supabase.from("trainers").update({ average_rating: Number(average.toFixed(2)) }).eq("id", trainerId);
+  if (topicIndex < 0 || sessionIndex < 0 || speakerIndex < 0 || coverageIndex < 0) {
+    return { success: false, message: "Could not detect questionnaire columns in survey CSV." };
+  }
+
+  const surveyRows = grid
+    .slice(surveyHeaderIndex + 1)
+    .filter((row) => row.some((cell) => String(cell ?? "").trim()))
+    .map((row) => ({
+      topic: String(row[topicIndex] ?? "").trim(),
+      session: parseRating(row[sessionIndex]),
+      speaker: parseRating(row[speakerIndex]),
+      coverage: parseRating(row[coverageIndex])
+    }))
+    .filter((row) => row.topic && (row.session !== null || row.speaker !== null || row.coverage !== null));
+
+  if (!surveyRows.length) {
+    return { success: false, message: "No valid survey responses were found in this CSV." };
+  }
+
+  const trainerAgg = new Map<string, { sessionSum: number; sessionCount: number; speakerSum: number; speakerCount: number; coverageSum: number; coverageCount: number }>();
+  const webinarAgg = new Map<string, { sessionSum: number; sessionCount: number }>();
+  const ratingInserts: Array<{ trainer_id: string; webinar_id: string | null; upload_batch_id: string; rating: number; source: string }> = [];
+  const selectedTitleKey = compact(selectedWebinar.title);
+  const filteredRows = surveyRows.filter((row) => {
+    const topicKey = compact(row.topic);
+    return topicKey.includes(selectedTitleKey) || selectedTitleKey.includes(topicKey);
+  });
+  const rowsForSelectedWebinar = filteredRows.length ? filteredRows : surveyRows;
+
+  for (const row of rowsForSelectedWebinar) {
+    const trainerId = selectedWebinar.trainer_id as string;
+    const agg = trainerAgg.get(trainerId) ?? { sessionSum: 0, sessionCount: 0, speakerSum: 0, speakerCount: 0, coverageSum: 0, coverageCount: 0 };
+    if (row.session !== null) {
+      agg.sessionSum += row.session;
+      agg.sessionCount += 1;
+      ratingInserts.push({
+        trainer_id: trainerId,
+        webinar_id: webinarId,
+        upload_batch_id: batch.id,
+        rating: row.session,
+        source: "csv"
+      });
+      const wAgg = webinarAgg.get(webinarId) ?? { sessionSum: 0, sessionCount: 0 };
+      wAgg.sessionSum += row.session;
+      wAgg.sessionCount += 1;
+      webinarAgg.set(webinarId, wAgg);
+    }
+    if (row.speaker !== null) {
+      agg.speakerSum += row.speaker;
+      agg.speakerCount += 1;
+    }
+    if (row.coverage !== null) {
+      agg.coverageSum += row.coverage;
+      agg.coverageCount += 1;
+    }
+    trainerAgg.set(trainerId, agg);
+  }
+
+  if (ratingInserts.length) {
+    const { error: ratingError } = await supabase.from("trainer_ratings").insert(ratingInserts);
+    if (ratingError) return { success: false, message: ratingError.message };
+  }
+
+  const trainerUpdates = Array.from(trainerAgg.entries()).map(([trainerId, agg]) => {
+    const sessionAvg = agg.sessionCount ? agg.sessionSum / agg.sessionCount : 0;
+    const speakerAvg = agg.speakerCount ? agg.speakerSum / agg.speakerCount : 0;
+    const coverageAvg = agg.coverageCount ? agg.coverageSum / agg.coverageCount : 0;
+    const totalAvg = Number(((sessionAvg + speakerAvg + coverageAvg) / 3).toFixed(2));
+    return {
+      trainerId,
+      update: {
+        session_rating_avg: Number(sessionAvg.toFixed(2)),
+        speaker_rating_avg: Number(speakerAvg.toFixed(2)),
+        coverage_rating_avg: Number(coverageAvg.toFixed(2)),
+        average_rating: totalAvg
+      }
+    };
+  });
+
+  for (const item of trainerUpdates) {
+    const { error } = await supabase.from("trainers").update(item.update).eq("id", item.trainerId);
+    if (error && error.code === "42703") {
+      await supabase.from("trainers").update({ average_rating: item.update.average_rating }).eq("id", item.trainerId);
+    } else if (error) {
+      return { success: false, message: error.message };
+    }
+  }
+
+  const webinarMetricRows = Array.from(webinarAgg.entries())
+    .filter(([, agg]) => agg.sessionCount > 0)
+    .map(([webinarId, agg]) => ({
+      webinar_id: webinarId,
+      registrations_count: registrationsCount,
+      attendees_count: attendeesCount,
+      first_time_future_traders_count: attendeesCount,
+      rating: Number((agg.sessionSum / agg.sessionCount).toFixed(2))
+    }));
+  if (webinarMetricRows.length) {
+    const { error: webinarMetricError } = await supabase.from("webinar_metrics").upsert(webinarMetricRows, { onConflict: "webinar_id" });
+    if (webinarMetricError) return { success: false, message: webinarMetricError.message };
   }
 
   revalidatePath("/admin/dashboard");
@@ -800,7 +964,11 @@ export async function uploadRatingsCsvAction(formData: FormData): Promise<Action
   revalidatePath("/admin/webinars");
   revalidatePath("/trainer/dashboard");
   revalidatePath("/trainer/leaderboard");
-  return { success: true, message: `Uploaded ${ratingInserts.length} ratings.` };
+  revalidatePath("/trainer/webinars");
+  return {
+    success: true,
+    message: `Processed ${rowsForSelectedWebinar.length} responses. Updated ${trainerUpdates.length} trainer(s).`
+  };
 }
 
 export async function upsertAvailabilityAction(formData: FormData): Promise<ActionResponse> {

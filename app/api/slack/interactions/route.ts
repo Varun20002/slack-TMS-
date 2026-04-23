@@ -2,6 +2,7 @@ import { revalidatePath } from "next/cache";
 import { after, NextResponse } from "next/server";
 import { z } from "zod";
 
+import { createGoogleCalendarEvent, decryptRefreshToken, refreshGoogleAccessToken, updateGoogleCalendarEvent } from "@/lib/google-calendar";
 import { slackApi, verifySlackSignature } from "@/lib/slack";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { buildGoogleCalendarEventUrl, formatDate } from "@/lib/utils";
@@ -295,30 +296,157 @@ async function upsertWebinarForRequest(supabase: any, requestRow: any, actor: { 
     status: requestRow.state === "CANCELLED" || requestRow.state === "REJECTED" ? "cancelled" : "upcoming"
   };
 
-  for (let attempt = 0; attempt < 8; attempt += 1) {
-    const { data, error } = await supabase.from("webinars").insert(payload).select("id").single();
-    if (!error && data?.id) {
-      await supabase.from("webinar_metrics").upsert({
-        webinar_id: data.id,
-        registrations_count: 0,
-        attendees_count: 0,
-        first_time_future_traders_count: 0,
-        rating: null,
-        highest_audience_count: null,
-        success_rate: null
-      });
-      return;
-    }
+  let webinarId: string | null = null;
 
-    const missingColumn = getMissingColumnName(error);
-    if (missingColumn && missingColumn in payload) {
-      delete payload[missingColumn];
-      continue;
+  const { data: existing } = await supabase.from("webinars").select("id").eq("source_request_id", requestRow.id).maybeSingle();
+  if (existing?.id) {
+    webinarId = existing.id;
+    for (let attempt = 0; attempt < 8; attempt += 1) {
+      const { error } = await supabase.from("webinars").update(payload).eq("id", existing.id);
+      if (!error) break;
+      const missingColumn = getMissingColumnName(error);
+      if (missingColumn && missingColumn in payload) {
+        delete payload[missingColumn];
+        continue;
+      }
+      break;
     }
-    break;
+  } else {
+    for (let attempt = 0; attempt < 8; attempt += 1) {
+      const { data, error } = await supabase.from("webinars").insert(payload).select("id").single();
+      if (!error && data?.id) {
+        webinarId = data.id;
+        break;
+      }
+      const missingColumn = getMissingColumnName(error);
+      if (missingColumn && missingColumn in payload) {
+        delete payload[missingColumn];
+        continue;
+      }
+      break;
+    }
   }
 
-  await dmUser(actor.id, "Could not create webinar record after confirmation. Please check DB schema for `webinars`.");
+  if (!webinarId) {
+    await dmUser(actor.id, "Could not create webinar record after confirmation. Please check DB schema for `webinars`.");
+    return;
+  }
+
+  await supabase.from("webinar_metrics").upsert({
+    webinar_id: webinarId,
+    registrations_count: 0,
+    attendees_count: 0,
+    first_time_future_traders_count: 0,
+    rating: null,
+    highest_audience_count: null,
+    success_rate: null
+  });
+
+  await syncGoogleEventForSlackWebinar(supabase, {
+    webinarId,
+    trainerId,
+    title: requestRow.topic,
+    startIso: requestRow.requested_date,
+    durationMinutes,
+    requirements: (metadata.requirements as string) || null,
+    targetUserBase: (metadata.target_user_base as string) || null,
+    preWebinarLink: normalizeUrl(metadata.pre_webinar_link as string),
+    postWebinarLink: normalizeUrl(metadata.post_webinar_link as string)
+  });
+}
+
+async function syncGoogleEventForSlackWebinar(
+  supabase: any,
+  input: {
+    webinarId: string;
+    trainerId: string;
+    title: string;
+    startIso: string;
+    durationMinutes: number;
+    requirements: string | null;
+    targetUserBase: string | null;
+    preWebinarLink: string | null;
+    postWebinarLink: string | null;
+  }
+) {
+  const { data: webinar } = await supabase
+    .from("webinars")
+    .select("id, google_event_id")
+    .eq("id", input.webinarId)
+    .maybeSingle();
+  if (!webinar?.id) return;
+
+  const { data: connection } = await supabase
+    .from("trainer_google_connections")
+    .select("encrypted_refresh_token, calendar_id")
+    .eq("trainer_id", input.trainerId)
+    .maybeSingle();
+
+  if (!connection?.encrypted_refresh_token) {
+    await supabase
+      .from("webinars")
+      .update({
+        google_event_id: null,
+        google_calendar_sync_error: "Trainer has not connected Google Calendar.",
+        updated_at: new Date().toISOString()
+      })
+      .eq("id", input.webinarId);
+    return;
+  }
+
+  try {
+    const refreshToken = decryptRefreshToken(connection.encrypted_refresh_token);
+    const accessToken = await refreshGoogleAccessToken(refreshToken);
+    const start = new Date(input.startIso);
+    const end = new Date(start.getTime() + input.durationMinutes * 60 * 1000);
+    const description = [
+      input.requirements ? `Requirements: ${input.requirements}` : null,
+      input.targetUserBase ? `Target user base: ${input.targetUserBase}` : null,
+      input.preWebinarLink ? `Pre-webinar link: ${input.preWebinarLink}` : null,
+      input.postWebinarLink ? `Post-webinar link: ${input.postWebinarLink}` : null
+    ]
+      .filter(Boolean)
+      .join("\n");
+
+    let eventId = webinar.google_event_id as string | null;
+    if (eventId) {
+      await updateGoogleCalendarEvent(accessToken, {
+        calendarId: connection.calendar_id || "primary",
+        eventId,
+        title: input.title,
+        description,
+        startIso: start.toISOString(),
+        endIso: end.toISOString()
+      });
+    } else {
+      eventId = await createGoogleCalendarEvent(accessToken, {
+        calendarId: connection.calendar_id || "primary",
+        title: input.title,
+        description,
+        startIso: start.toISOString(),
+        endIso: end.toISOString()
+      });
+    }
+
+    await supabase
+      .from("webinars")
+      .update({
+        google_event_id: eventId,
+        google_calendar_sync_error: null,
+        updated_at: new Date().toISOString()
+      })
+      .eq("id", input.webinarId);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Google Calendar sync failed.";
+    await supabase
+      .from("webinars")
+      .update({
+        google_event_id: null,
+        google_calendar_sync_error: message,
+        updated_at: new Date().toISOString()
+      })
+      .eq("id", input.webinarId);
+  }
 }
 
 async function ensureChecklistAndPostToGrowth(params: { supabase: any; requestId: string; actorId: string; actorName: string }) {
@@ -398,6 +526,12 @@ type ScheduleDraft = {
   target_user_base: string;
 };
 
+type TrainerPreview = {
+  name: string;
+  imageUrl: string | null;
+  bioText: string;
+};
+
 function durationOptions() {
   return DURATION_VALUES.map((value) => ({
     text: { type: "plain_text" as const, text: `${value} minutes` },
@@ -417,7 +551,9 @@ function minutesToTimeLabel(totalMinutes: number) {
 }
 
 function dayOfWeekFromDate(date: string) {
-  return new Date(`${date}T00:00:00+05:30`).getDay();
+  const [year, month, day] = date.split("-").map(Number);
+  if (!year || !month || !day) return new Date(date).getDay();
+  return new Date(Date.UTC(year, month - 1, day)).getUTCDay();
 }
 
 async function buildTrainerOptions(supabase: any) {
@@ -426,6 +562,36 @@ async function buildTrainerOptions(supabase: any) {
     text: { type: "plain_text" as const, text: trainer.name.slice(0, 75) },
     value: trainer.id
   }));
+}
+
+function truncate(text: string, max = 220) {
+  if (text.length <= max) return text;
+  return `${text.slice(0, max - 1)}…`;
+}
+
+async function buildTrainerPreview(supabase: any, trainerId: string): Promise<TrainerPreview | null> {
+  if (!trainerId) return null;
+  const { data: trainer } = await supabase
+    .from("trainers")
+    .select("name, experience, investing_trading_persona, strengths, credentials_or_claim_to_fame, profile_image_url")
+    .eq("id", trainerId)
+    .maybeSingle();
+  if (!trainer) return null;
+
+  const parts = [
+    typeof trainer.experience === "number" ? `${trainer.experience} yrs exp` : null,
+    trainer.investing_trading_persona ? `Persona: ${trainer.investing_trading_persona}` : null,
+    trainer.strengths ? `Strengths: ${trainer.strengths}` : null,
+    trainer.credentials_or_claim_to_fame ? `Credentials: ${trainer.credentials_or_claim_to_fame}` : null
+  ]
+    .filter(Boolean)
+    .join(" • ");
+
+  return {
+    name: trainer.name,
+    imageUrl: trainer.profile_image_url || null,
+    bioText: truncate(parts || "No bio details available yet.", 280)
+  };
 }
 
 async function buildAvailableTimeOptions(supabase: any, trainerId: string, requestDate: string, durationMinutes: number) {
@@ -497,8 +663,9 @@ function buildScheduleModal(params: {
   timeOptions: Array<{ text: { type: "plain_text"; text: string }; value: string }>;
   availabilityHint: string;
   privateMetadata: string;
+  trainerPreview: TrainerPreview | null;
 }) {
-  const { draft, trainerOptions, timeOptions, availabilityHint, privateMetadata } = params;
+  const { draft, trainerOptions, timeOptions, availabilityHint, privateMetadata, trainerPreview } = params;
   const selectedDuration = durationOptions().find((opt) => opt.value === draft.duration_minutes);
   const selectedTrainer = trainerOptions.find((opt) => opt.value === draft.trainer_id);
   const selectedStartTime = timeOptions.find((opt) => opt.value === draft.start_time);
@@ -530,6 +697,31 @@ function buildScheduleModal(params: {
           ...(selectedTrainer ? { initial_option: selectedTrainer } : {})
         }
       },
+      ...(trainerPreview
+        ? [
+            ...(trainerPreview.imageUrl
+              ? [
+                  {
+                    type: "image",
+                    image_url: trainerPreview.imageUrl,
+                    alt_text: `${trainerPreview.name} profile photo`
+                  }
+                ]
+              : []),
+            {
+              type: "section",
+              text: {
+                type: "mrkdwn",
+                text: `*${trainerPreview.name}* \n${trainerPreview.bioText}`
+              }
+            }
+          ]
+        : [
+            {
+              type: "context",
+              elements: [{ type: "mrkdwn", text: "Select a trainer to view profile preview." }]
+            }
+          ]),
       {
         type: "input",
         block_id: "date_block",
@@ -778,6 +970,7 @@ async function handleScheduleModalBlockAction(payload: any) {
   const supabase = createAdminClient() as any;
   const draft = getScheduleDraft(payload);
   const trainerOptions = await buildTrainerOptions(supabase);
+  const trainerPreview = await buildTrainerPreview(supabase, draft.trainer_id);
   const durationMinutes = Number(draft.duration_minutes || 0);
   const timeOptions = await buildAvailableTimeOptions(supabase, draft.trainer_id, draft.request_date, durationMinutes);
   const hasSlots = timeOptions.some((option) => option.value !== NO_SLOT_VALUE);
@@ -798,7 +991,8 @@ async function handleScheduleModalBlockAction(payload: any) {
       trainerOptions,
       timeOptions,
       availabilityHint,
-      privateMetadata: payload.view.private_metadata ?? "{}"
+      privateMetadata: payload.view.private_metadata ?? "{}",
+      trainerPreview
     })
   });
 

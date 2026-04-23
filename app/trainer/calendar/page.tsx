@@ -73,9 +73,6 @@ export default async function TrainerCalendarPage() {
             <Button asChild>
               <Link href="/api/google/calendar/connect">{isConnected ? "Reconnect Google Calendar" : "Connect Google Calendar"}</Link>
             </Button>
-            <Button asChild variant="outline">
-              <Link href="/trainer/profile">Manage in Profile</Link>
-            </Button>
           </div>
         </CardContent>
       </Card>

@@ -13,7 +13,7 @@ export default async function TrainerLeaderboardPage() {
           <CardDescription>Default ranking is by rating. Click arrows on metrics to re-rank.</CardDescription>
         </CardHeader>
         <CardContent className="overflow-x-auto">
-          <SortableLeaderboardTable rows={leaderboard} showScore />
+          <SortableLeaderboardTable rows={leaderboard} />
         </CardContent>
       </Card>
     </div>

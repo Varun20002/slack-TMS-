@@ -21,6 +21,9 @@ type TrainerRecord = {
   certifications: string | null;
   social_media_handles: Record<string, string> | null;
   profile_image_url?: string | null;
+  session_rating_avg?: number;
+  speaker_rating_avg?: number;
+  coverage_rating_avg?: number;
   average_rating: number;
 };
 
@@ -79,6 +82,9 @@ export function TrainerDetailsViewer({ trainers }: { trainers: TrainerRecord[] }
               }
             />
             <Detail label="Profile Image URL" value={selectedTrainer.profile_image_url ?? null} className="md:col-span-2" />
+            <Detail label="Session" value={Number(selectedTrainer.session_rating_avg ?? 0).toFixed(2)} />
+            <Detail label="Speaker" value={Number(selectedTrainer.speaker_rating_avg ?? 0).toFixed(2)} />
+            <Detail label="Coverage" value={Number(selectedTrainer.coverage_rating_avg ?? 0).toFixed(2)} />
             <Detail label="Average Rating" value={Number(selectedTrainer.average_rating).toFixed(2)} />
           </div>
         ) : null}

@@ -4,10 +4,11 @@ export async function getAdminDashboardData() {
   const supabase = (await createClient()) as any;
   const nowIso = new Date().toISOString();
 
-  const [{ data: trainers }, { data: webinars }, { data: metrics }] = await Promise.all([
+  const [{ data: trainers }, { data: webinars }, { data: metrics }, { data: csvRated }] = await Promise.all([
     supabase.from("trainers").select("*").order("created_at", { ascending: false }),
     supabase.from("webinars").select("*").order("webinar_timing", { ascending: true }),
-    supabase.from("webinar_metrics").select("*")
+    supabase.from("webinar_metrics").select("*"),
+    supabase.from("trainer_ratings").select("webinar_id").eq("source", "csv").not("webinar_id", "is", null)
   ]);
 
   const upcomingWebinars = (webinars ?? []).filter((webinar) => webinar.webinar_timing >= nowIso && webinar.status !== "cancelled");
@@ -23,6 +24,7 @@ export async function getAdminDashboardData() {
     upcomingWebinars,
     pastWebinars,
     metrics: metrics ?? [],
+    csvRatedWebinarIds: Array.from(new Set((csvRated ?? []).map((row) => row.webinar_id).filter(Boolean))),
     stats: {
       totalTrainers: trainers?.length ?? 0,
       upcomingCount: upcomingWebinars.length,
@@ -57,7 +59,7 @@ export async function getTrainerDashboardData(profileId: string) {
   const registrations = metricRows.reduce((sum, item) => sum + item.registrations_count, 0);
   const attendees = metricRows.reduce((sum, item) => sum + item.attendees_count, 0);
   const highestAudience = metricRows.reduce((max, item) => Math.max(max, item.highest_audience_count ?? item.attendees_count), 0);
-  const averageRating = metricRows.length ? metricRows.reduce((sum, item) => sum + Number(item.rating ?? 0), 0) / metricRows.length : trainer.average_rating;
+  const averageRating = Number(trainer.average_rating ?? 0);
 
   return {
     trainer,
@@ -86,7 +88,6 @@ export async function getLeaderboardData() {
     const metricRows = webinars.flatMap((item) => item.webinar_metrics ?? []);
     const totalAttendees = metricRows.reduce((sum, m) => sum + (m.attendees_count ?? 0), 0);
     const highestAudience = metricRows.reduce((max, m) => Math.max(max, m.highest_audience_count ?? m.attendees_count ?? 0), 0);
-    const score = Number((Number(trainer.average_rating) * 0.5 + completed * 0.3 + totalAttendees * 0.2 / 100).toFixed(3));
 
     return {
       id: trainer.id,
@@ -95,10 +96,15 @@ export async function getLeaderboardData() {
       averageRating: Number(trainer.average_rating),
       completedWebinars: completed,
       totalAttendees,
-      highestAudience,
-      score
+      highestAudience
     };
   });
 
-  return rows.sort((a, b) => b.score - a.score).map((row, index) => ({ ...row, rank: index + 1 }));
+  return rows
+    .sort((a, b) => {
+      if (b.averageRating !== a.averageRating) return b.averageRating - a.averageRating;
+      if (b.completedWebinars !== a.completedWebinars) return b.completedWebinars - a.completedWebinars;
+      return b.totalAttendees - a.totalAttendees;
+    })
+    .map((row, index) => ({ ...row, rank: index + 1 }));
 }

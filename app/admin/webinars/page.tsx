@@ -36,6 +36,7 @@ export default async function AdminWebinarsPage() {
       id: item.id,
       title: item.title,
       trainerName: item.trainers?.name ?? "-",
+      registrations: metric?.registrations_count ?? 0,
       attendees: metric?.attendees_count ?? 0,
       rating: Number(metric?.rating ?? 0),
       successRate: Number(metric?.success_rate ?? 0),
