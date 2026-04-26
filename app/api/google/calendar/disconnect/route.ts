@@ -8,7 +8,7 @@ export async function POST(request: Request) {
   const {
     data: { user }
   } = await supabase.auth.getUser();
-  if (!user) return NextResponse.redirect(new URL("/login/trainer", request.url));
+  if (!user) return NextResponse.redirect(new URL("/login", request.url));
 
   const { data: profile } = await supabase.from("profiles").select("id, role").eq("id", user.id).maybeSingle();
   if (!profile || profile.role !== "trainer") return NextResponse.redirect(new URL("/", request.url));

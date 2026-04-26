@@ -23,7 +23,7 @@ export async function getCurrentProfile() {
 
 export async function requireRole(role: Role) {
   const profile = await getCurrentProfile();
-  if (!profile) redirect(role === "admin" ? "/login/admin" : "/login/trainer");
+  if (!profile) redirect("/login");
   if (profile.role !== role) redirect(profile.role === "admin" ? "/admin/dashboard" : "/trainer/dashboard");
   return profile;
 }

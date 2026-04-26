@@ -61,6 +61,9 @@ export async function getTrainerDashboardData(profileId: string) {
   const highestAudience = metricRows.reduce((max, item) => Math.max(max, item.highest_audience_count ?? item.attendees_count), 0);
   const averageRating = Number(trainer.average_rating ?? 0);
 
+  const leaderboard = await getLeaderboardData();
+  const rank = leaderboard.find((row) => row.id === trainer.id)?.rank ?? null;
+
   return {
     trainer,
     webinars: webinars ?? [],
@@ -73,7 +76,8 @@ export async function getTrainerDashboardData(profileId: string) {
       attendees,
       highestAudience,
       averageRating,
-      completedWebinars: past.length
+      completedWebinars: past.length,
+      rank
     }
   };
 }

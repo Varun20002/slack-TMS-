@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { BarChart3, CalendarClock, LayoutDashboard, Medal, Settings2, Users, Video } from "lucide-react";
+import { BarChart3, CalendarClock, LayoutDashboard, Settings2, Users, Video } from "lucide-react";
 import { usePathname } from "next/navigation";
 
 import { LogoutButton } from "@/components/layout/logout-button";
@@ -15,17 +15,13 @@ const adminNav: NavItem[] = [
   { href: "/admin/dashboard", label: "Dashboard", icon: LayoutDashboard },
   { href: "/admin/trainers", label: "Trainers", icon: Users },
   { href: "/admin/webinars", label: "Webinars", icon: Video },
-  { href: "/admin/leaderboard", label: "Leaderboard", icon: BarChart3 },
-  { href: "/admin/calendar", label: "Calendar", icon: CalendarClock },
-  { href: "/admin/profile", label: "Profile", icon: Settings2 }
+  { href: "/admin/leaderboard", label: "Leaderboard", icon: BarChart3 }
 ];
 
 const trainerNav: NavItem[] = [
   { href: "/trainer/dashboard", label: "Dashboard", icon: LayoutDashboard },
   { href: "/trainer/webinars", label: "Webinars", icon: Video },
-  { href: "/trainer/calendar", label: "Calendar", icon: CalendarClock },
-  { href: "/trainer/availability", label: "Availability", icon: CalendarClock },
-  { href: "/trainer/achievements", label: "Achievements", icon: Medal },
+  { href: "/trainer/availability", label: "My Schedule", icon: CalendarClock },
   { href: "/trainer/leaderboard", label: "Leaderboard", icon: BarChart3 },
   { href: "/trainer/profile", label: "Profile", icon: Settings2 }
 ];
@@ -46,7 +42,6 @@ export function AppShell({
     <div className="min-h-screen">
       <aside className="hidden border-r border-border/60 bg-card/60 p-4 backdrop-blur lg:fixed lg:left-0 lg:top-0 lg:block lg:h-screen lg:w-[260px] lg:overflow-y-auto">
         <div className="mb-8 space-y-2">
-          <p className="text-xl font-semibold">TrainerOS</p>
           <Badge className="capitalize">{role}</Badge>
         </div>
         <nav className="space-y-1">

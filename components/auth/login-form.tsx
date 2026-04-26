@@ -15,7 +15,7 @@ import { Label } from "@/components/ui/label";
 
 type FormValues = z.infer<typeof loginSchema>;
 
-export function LoginForm({ role }: { role: "admin" | "trainer" }) {
+export function LoginForm() {
   const router = useRouter();
   const [submitting, setSubmitting] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
@@ -26,9 +26,7 @@ export function LoginForm({ role }: { role: "admin" | "trainer" }) {
     setError,
     clearErrors,
     formState: { errors }
-  } = useForm<FormValues>({
-    defaultValues: { role }
-  });
+  } = useForm<FormValues>();
 
   const onSubmit = handleSubmit(async (values) => {
     clearErrors();
@@ -36,7 +34,7 @@ export function LoginForm({ role }: { role: "admin" | "trainer" }) {
     if (!parsed.success) {
       for (const issue of parsed.error.issues) {
         const field = issue.path[0];
-        if (field === "email" || field === "password" || field === "role") {
+        if (field === "email" || field === "password") {
           setError(field, { type: "manual", message: issue.message });
         }
       }
@@ -89,22 +87,17 @@ export function LoginForm({ role }: { role: "admin" | "trainer" }) {
   return (
     <Card className="w-full max-w-md border-border/70 bg-card/95 shadow-lg">
       <CardHeader>
-        <CardTitle>{role === "admin" ? "Admin Login" : "Trainer Login"}</CardTitle>
-        <CardDescription>
-          {role === "admin" ? "Use your admin account to manage trainers and webinars." : "Use your trainer account to access your workspace."}
-        </CardDescription>
+        <CardTitle>Sign In</CardTitle>
+        <CardDescription>Enter your email and password to continue.</CardDescription>
       </CardHeader>
       <CardContent>
         <form className="space-y-4" onSubmit={onSubmit}>
-          <input type="hidden" value={role} {...register("role")} />
           <div className="space-y-1.5">
             <Label>Email</Label>
             <Input
               type="email"
               autoComplete="email"
-              {...register("email", {
-                onChange: () => clearErrors("email")
-              })}
+              {...register("email", { onChange: () => clearErrors("email") })}
               placeholder="name@company.com"
             />
             {errors.email ? <p className="text-xs text-destructive">{errors.email.message}</p> : null}
@@ -115,9 +108,7 @@ export function LoginForm({ role }: { role: "admin" | "trainer" }) {
               <Input
                 type={showPassword ? "text" : "password"}
                 autoComplete="current-password"
-                {...register("password", {
-                  onChange: () => clearErrors("password")
-                })}
+                {...register("password", { onChange: () => clearErrors("password") })}
                 placeholder="Enter password"
                 className="pr-10"
               />
@@ -134,7 +125,7 @@ export function LoginForm({ role }: { role: "admin" | "trainer" }) {
             {errors.password ? <p className="text-xs text-destructive">{errors.password.message}</p> : null}
           </div>
           <Button type="submit" className="w-full" disabled={submitting}>
-            {submitting ? "Signing in..." : "Continue"}
+            {submitting ? "Signing in…" : "Sign In"}
           </Button>
         </form>
       </CardContent>

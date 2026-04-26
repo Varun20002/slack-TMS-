@@ -28,7 +28,7 @@ export async function updateSession(request: NextRequest) {
   const path = request.nextUrl.pathname;
   const isAdminRoute = path.startsWith("/admin");
   const isTrainerRoute = path.startsWith("/trainer");
-  const isLoginRoute = path.startsWith("/login/admin") || path.startsWith("/login/trainer");
+  const isLoginRoute = path === "/login" || path.startsWith("/login/admin") || path.startsWith("/login/trainer");
   const isTrainerFirstLoginRoute = path.startsWith("/trainer/first-login");
   const isSwitchMode = request.nextUrl.searchParams.get("switch") === "1";
   const userId = user?.id ?? null;
@@ -43,8 +43,7 @@ export async function updateSession(request: NextRequest) {
   }
 
   if (!user && (isAdminRoute || isTrainerRoute)) {
-    const next = isAdminRoute ? "/login/admin" : "/login/trainer";
-    return NextResponse.redirect(new URL(next, request.url));
+    return NextResponse.redirect(new URL("/login", request.url));
   }
 
   if (user && isLoginRoute && !isSwitchMode) {

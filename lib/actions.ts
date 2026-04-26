@@ -17,13 +17,14 @@ import { createClient } from "@/lib/supabase/server";
 import { slackApi } from "@/lib/slack";
 import { buildGoogleCalendarEventUrl, formatDate } from "@/lib/utils";
 import { availabilitySchema, trainerFirstLoginSchema, trainerSchema, webinarSchema } from "@/lib/validation";
+import { cumulativeAverage, findSurveyHeaderIndex, filterSurveyRowsByTitle, normalizeCell, parseSurveyRows, sanitizeFileName as sanitizeFileNameHelper } from "@/lib/csv-helpers";
 
 export type ActionResponse = { success: boolean; message: string; temporaryPassword?: string; redirectTo?: string };
 type ContactField = "email" | "phone";
 const TRAINER_PROFILE_BUCKET = "trainer-profile-images";
 
 function sanitizeFileName(name: string) {
-  return name.toLowerCase().replace(/[^a-z0-9.\-_]/g, "-");
+  return sanitizeFileNameHelper(name);
 }
 
 function getOpsChannelId() {
@@ -179,7 +180,7 @@ async function deleteGoogleEventForWebinar(webinar: { trainer_id: string; google
   });
 }
 
-export async function loginAction(input: { email: string; password: string; role: "admin" | "trainer" }) {
+export async function loginAction(input: { email: string; password: string }) {
   const supabase = (await createClient()) as any;
   const { data, error } = await supabase.auth.signInWithPassword({
     email: input.email,
@@ -199,12 +200,12 @@ export async function loginAction(input: { email: string; password: string; role
     profile = profileWithFlag.data;
   }
 
-  if (!profile || profile.role !== input.role) {
+  if (!profile) {
     await supabase.auth.signOut();
-    return { success: false, message: "This account does not have access to this portal." };
+    return { success: false, message: "Account not set up. Contact admin." };
   }
 
-  if (input.role === "trainer" && profile.must_change_password) {
+  if (profile.role === "trainer" && profile.must_change_password) {
     return {
       success: true,
       message: "Temporary password accepted. Please set a new password.",
@@ -215,7 +216,7 @@ export async function loginAction(input: { email: string; password: string; role
   return {
     success: true,
     message: "Authenticated",
-    redirectTo: input.role === "admin" ? "/admin/dashboard" : "/trainer/dashboard"
+    redirectTo: profile.role === "admin" ? "/admin/dashboard" : "/trainer/dashboard"
   };
 }
 
@@ -231,7 +232,13 @@ export async function createTrainerAction(formData: FormData): Promise<ActionRes
     return { success: false, message: parsed.error.issues[0]?.message ?? "Invalid trainer data." };
   }
 
-  const social = { handles: parsed.data.social_media_handles.trim() } as Record<string, string>;
+  let social: Record<string, string>;
+  try {
+    const raw = JSON.parse(parsed.data.social_media_handles.trim());
+    social = typeof raw === "object" && raw !== null ? raw : { handles: parsed.data.social_media_handles.trim() };
+  } catch {
+    social = { handles: parsed.data.social_media_handles.trim() };
+  }
   const supabase = createAdminClient() as any;
   const profileImageFile = formData.get("profile_image");
   let profileImageUrl: string | null = null;
@@ -398,6 +405,28 @@ export async function updateTrainerAction(id: string, formData: FormData): Promi
   revalidatePath("/admin/trainers");
   revalidatePath("/trainer/profile");
   return { success: true, message: "Trainer updated." };
+}
+
+export async function deleteTrainerAction(trainerId: string, profileId: string | null): Promise<ActionResponse> {
+  await requireRole("admin");
+  const supabase = createAdminClient() as any;
+
+  // Delete trainer row first — cascades trainer_availability, trainer_ratings,
+  // trainer_badges, incentives, trainer_google_connections automatically.
+  const { error: trainerError } = await supabase.from("trainers").delete().eq("id", trainerId);
+  if (trainerError) return { success: false, message: trainerError.message };
+
+  // Delete the auth user — auto-cascades to the profiles row.
+  if (profileId) {
+    const { error: authError } = await supabase.auth.admin.deleteUser(profileId);
+    if (authError) return { success: false, message: authError.message };
+  }
+
+  revalidatePath("/admin/trainers");
+  revalidatePath("/admin/dashboard");
+  revalidatePath("/admin/leaderboard");
+  revalidatePath("/trainer/leaderboard");
+  return { success: true, message: "Trainer deleted." };
 }
 
 export async function createWebinarAction(formData: FormData): Promise<ActionResponse> {
@@ -752,23 +781,13 @@ export async function uploadRatingsCsvAction(formData: FormData): Promise<Action
   if (attendeesCount > registrationsCount) return { success: false, message: "Attendees cannot be greater than registrations." };
 
   const text = await file.text();
-  const normalize = (value: string | null | undefined) => String(value ?? "").trim().toLowerCase().replace(/\s+/g, " ");
-  const compact = (value: string | null | undefined) => normalize(value).replace(/[^a-z0-9]/g, "");
-  const parseRating = (value: string | null | undefined) => {
-    const parsed = Number(String(value ?? "").trim());
-    return Number.isFinite(parsed) && parsed >= 1 && parsed <= 5 ? parsed : null;
-  };
-
   const gridParse = Papa.parse<string[]>(text, { header: false, skipEmptyLines: false });
   if (gridParse.errors.length > 0) {
     return { success: false, message: `CSV parsing failed: ${gridParse.errors[0]?.message}` };
   }
 
   const grid = gridParse.data ?? [];
-  const surveyHeaderIndex = grid.findIndex((row) => {
-    const headers = row.map((cell) => normalize(cell));
-    return headers[0] === "#" && headers.some((cell) => cell.includes("meeting/webinar id")) && headers.some((cell) => cell.includes("session overall"));
-  });
+  const surveyHeaderIndex = findSurveyHeaderIndex(grid);
 
   const supabase = (await createClient()) as any;
   const { data: selectedWebinar, error: selectedWebinarError } = await supabase
@@ -851,114 +870,59 @@ export async function uploadRatingsCsvAction(formData: FormData): Promise<Action
     return { success: true, message: `Uploaded ${ratingInserts.length} ratings.` };
   }
 
-  const surveyHeaders = grid[surveyHeaderIndex].map((cell) => normalize(cell));
+  const surveyHeaders = grid[surveyHeaderIndex].map((cell) => normalizeCell(cell));
   const findHeaderIndex = (keywords: string[]) => surveyHeaders.findIndex((header) => keywords.every((k) => header.includes(k)));
   const topicIndex = findHeaderIndex(["topic"]);
   const sessionIndex = findHeaderIndex(["session overall"]);
-  const speakerIndex = findHeaderIndex(["speaker overall"]);
-  const coverageIndex = findHeaderIndex(["topic covered"]);
 
-  if (topicIndex < 0 || sessionIndex < 0 || speakerIndex < 0 || coverageIndex < 0) {
-    return { success: false, message: "Could not detect questionnaire columns in survey CSV." };
+  if (topicIndex < 0 || sessionIndex < 0) {
+    return { success: false, message: "Could not detect required columns (Topic, session overall) in survey CSV." };
   }
 
-  const surveyRows = grid
-    .slice(surveyHeaderIndex + 1)
-    .filter((row) => row.some((cell) => String(cell ?? "").trim()))
-    .map((row) => ({
-      topic: String(row[topicIndex] ?? "").trim(),
-      session: parseRating(row[sessionIndex]),
-      speaker: parseRating(row[speakerIndex]),
-      coverage: parseRating(row[coverageIndex])
-    }))
-    .filter((row) => row.topic && (row.session !== null || row.speaker !== null || row.coverage !== null));
+  const surveyRows = parseSurveyRows(grid.slice(surveyHeaderIndex + 1), topicIndex, sessionIndex);
 
   if (!surveyRows.length) {
     return { success: false, message: "No valid survey responses were found in this CSV." };
   }
 
-  const trainerAgg = new Map<string, { sessionSum: number; sessionCount: number; speakerSum: number; speakerCount: number; coverageSum: number; coverageCount: number }>();
-  const webinarAgg = new Map<string, { sessionSum: number; sessionCount: number }>();
-  const ratingInserts: Array<{ trainer_id: string; webinar_id: string | null; upload_batch_id: string; rating: number; source: string }> = [];
-  const selectedTitleKey = compact(selectedWebinar.title);
-  const filteredRows = surveyRows.filter((row) => {
-    const topicKey = compact(row.topic);
-    return topicKey.includes(selectedTitleKey) || selectedTitleKey.includes(topicKey);
-  });
-  const rowsForSelectedWebinar = filteredRows.length ? filteredRows : surveyRows;
+  const rowsForSelectedWebinar = filterSurveyRowsByTitle(surveyRows, selectedWebinar.title);
 
-  for (const row of rowsForSelectedWebinar) {
-    const trainerId = selectedWebinar.trainer_id as string;
-    const agg = trainerAgg.get(trainerId) ?? { sessionSum: 0, sessionCount: 0, speakerSum: 0, speakerCount: 0, coverageSum: 0, coverageCount: 0 };
-    if (row.session !== null) {
-      agg.sessionSum += row.session;
-      agg.sessionCount += 1;
-      ratingInserts.push({
-        trainer_id: trainerId,
-        webinar_id: webinarId,
-        upload_batch_id: batch.id,
-        rating: row.session,
-        source: "csv"
-      });
-      const wAgg = webinarAgg.get(webinarId) ?? { sessionSum: 0, sessionCount: 0 };
-      wAgg.sessionSum += row.session;
-      wAgg.sessionCount += 1;
-      webinarAgg.set(webinarId, wAgg);
-    }
-    if (row.speaker !== null) {
-      agg.speakerSum += row.speaker;
-      agg.speakerCount += 1;
-    }
-    if (row.coverage !== null) {
-      agg.coverageSum += row.coverage;
-      agg.coverageCount += 1;
-    }
-    trainerAgg.set(trainerId, agg);
+  const trainerId = selectedWebinar.trainer_id as string;
+  const ratingInserts = rowsForSelectedWebinar.map((row) => ({
+    trainer_id: trainerId,
+    webinar_id: webinarId,
+    upload_batch_id: batch.id,
+    rating: row.session as number,
+    source: "csv"
+  }));
+
+  if (!ratingInserts.length) {
+    return { success: false, message: "No valid session ratings found in this CSV." };
   }
 
-  if (ratingInserts.length) {
-    const { error: ratingError } = await supabase.from("trainer_ratings").insert(ratingInserts);
-    if (ratingError) return { success: false, message: ratingError.message };
-  }
+  const { error: ratingError } = await supabase.from("trainer_ratings").insert(ratingInserts);
+  if (ratingError) return { success: false, message: ratingError.message };
 
-  const trainerUpdates = Array.from(trainerAgg.entries()).map(([trainerId, agg]) => {
-    const sessionAvg = agg.sessionCount ? agg.sessionSum / agg.sessionCount : 0;
-    const speakerAvg = agg.speakerCount ? agg.speakerSum / agg.speakerCount : 0;
-    const coverageAvg = agg.coverageCount ? agg.coverageSum / agg.coverageCount : 0;
-    const totalAvg = Number(((sessionAvg + speakerAvg + coverageAvg) / 3).toFixed(2));
-    return {
-      trainerId,
-      update: {
-        session_rating_avg: Number(sessionAvg.toFixed(2)),
-        speaker_rating_avg: Number(speakerAvg.toFixed(2)),
-        coverage_rating_avg: Number(coverageAvg.toFixed(2)),
-        average_rating: totalAvg
-      }
-    };
-  });
+  // Cumulative average: fetch ALL historical trainer_ratings for this trainer across all uploads
+  const { data: allRatings } = await supabase.from("trainer_ratings").select("rating").eq("trainer_id", trainerId);
+  const avg = cumulativeAverage((allRatings ?? []).map((r: { rating: number }) => r.rating));
+  await supabase.from("trainers").update({ average_rating: Number(avg.toFixed(2)) }).eq("id", trainerId);
 
-  for (const item of trainerUpdates) {
-    const { error } = await supabase.from("trainers").update(item.update).eq("id", item.trainerId);
-    if (error && error.code === "42703") {
-      await supabase.from("trainers").update({ average_rating: item.update.average_rating }).eq("id", item.trainerId);
-    } else if (error) {
-      return { success: false, message: error.message };
-    }
-  }
+  // Webinar metrics: session avg for this upload's rows
+  const sessionSum = ratingInserts.reduce((sum, r) => sum + r.rating, 0);
+  const sessionAvgForWebinar = Number((sessionSum / ratingInserts.length).toFixed(2));
 
-  const webinarMetricRows = Array.from(webinarAgg.entries())
-    .filter(([, agg]) => agg.sessionCount > 0)
-    .map(([webinarId, agg]) => ({
+  const { error: webinarMetricError } = await supabase.from("webinar_metrics").upsert(
+    {
       webinar_id: webinarId,
       registrations_count: registrationsCount,
       attendees_count: attendeesCount,
       first_time_future_traders_count: attendeesCount,
-      rating: Number((agg.sessionSum / agg.sessionCount).toFixed(2))
-    }));
-  if (webinarMetricRows.length) {
-    const { error: webinarMetricError } = await supabase.from("webinar_metrics").upsert(webinarMetricRows, { onConflict: "webinar_id" });
-    if (webinarMetricError) return { success: false, message: webinarMetricError.message };
-  }
+      rating: sessionAvgForWebinar
+    },
+    { onConflict: "webinar_id" }
+  );
+  if (webinarMetricError) return { success: false, message: webinarMetricError.message };
 
   revalidatePath("/admin/dashboard");
   revalidatePath("/admin/trainers");
@@ -968,7 +932,7 @@ export async function uploadRatingsCsvAction(formData: FormData): Promise<Action
   revalidatePath("/trainer/webinars");
   return {
     success: true,
-    message: `Processed ${rowsForSelectedWebinar.length} responses. Updated ${trainerUpdates.length} trainer(s).`
+    message: `Processed ${ratingInserts.length} session ratings. Trainer average rating updated.`
   };
 }
 

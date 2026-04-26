@@ -12,16 +12,13 @@ export async function middleware(request: NextRequest) {
     const isTrainerRoute = path.startsWith("/trainer");
     console.error("Middleware failure", error);
 
-    if (isAdminRoute) {
-      return NextResponse.redirect(new URL("/login/admin", request.url));
-    }
-    if (isTrainerRoute) {
-      return NextResponse.redirect(new URL("/login/trainer", request.url));
+    if (isAdminRoute || isTrainerRoute) {
+      return NextResponse.redirect(new URL("/login", request.url));
     }
     return NextResponse.next();
   }
 }
 
 export const config = {
-  matcher: ["/admin/:path*", "/trainer/:path*", "/login/:path*"]
+  matcher: ["/admin/:path*", "/trainer/:path*", "/login", "/login/:path*"]
 };

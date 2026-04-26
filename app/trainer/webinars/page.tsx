@@ -26,7 +26,6 @@ export default async function TrainerWebinarsPage() {
                 <TableHead>Timing</TableHead>
                 <TableHead>Remaining</TableHead>
                 <TableHead>Target users</TableHead>
-                <TableHead>Pre link</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -38,11 +37,6 @@ export default async function TrainerWebinarsPage() {
                     <TimeRemainingBadge targetIso={item.webinar_timing} />
                   </TableCell>
                   <TableCell>{item.target_user_base ?? "-"}</TableCell>
-                  <TableCell>
-                    <a href={item.pre_webinar_link ?? "#"} target="_blank" rel="noreferrer" className="text-primary underline">
-                      Open
-                    </a>
-                  </TableCell>
                 </TableRow>
               ))}
             </TableBody>
@@ -60,8 +54,9 @@ export default async function TrainerWebinarsPage() {
             <TableHeader>
               <TableRow>
                 <TableHead>Title</TableHead>
+                <TableHead>Registered</TableHead>
+                <TableHead>Attended</TableHead>
                 <TableHead>Rating</TableHead>
-                <TableHead>Attendees</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -70,8 +65,9 @@ export default async function TrainerWebinarsPage() {
                 return (
                   <TableRow key={item.id}>
                     <TableCell>{item.title}</TableCell>
-                    <TableCell>{Number(metric?.rating ?? 0).toFixed(2)}</TableCell>
+                    <TableCell>{metric?.registrations_count ?? 0}</TableCell>
                     <TableCell>{metric?.attendees_count ?? 0}</TableCell>
+                    <TableCell>{Number(metric?.rating ?? 0).toFixed(2)}</TableCell>
                   </TableRow>
                 );
               })}

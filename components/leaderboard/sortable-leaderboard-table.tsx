@@ -16,13 +16,12 @@ type LeaderboardRow = {
   highestAudience: number;
 };
 
-type SortKey = "averageRating" | "completedWebinars" | "totalAttendees" | "highestAudience";
+type SortKey = "averageRating" | "completedWebinars" | "totalAttendees";
 
 const SORT_FIELDS: Array<{ key: SortKey; label: string }> = [
   { key: "averageRating", label: "Rating" },
   { key: "completedWebinars", label: "Completed Webinars" },
-  { key: "totalAttendees", label: "Total Attendees" },
-  { key: "highestAudience", label: "Highest Audience" }
+  { key: "totalAttendees", label: "Total Attendees" }
 ];
 
 export function SortableLeaderboardTable({
@@ -92,7 +91,6 @@ export function SortableLeaderboardTable({
             <TableCell>{row.averageRating.toFixed(2)}</TableCell>
             <TableCell>{row.completedWebinars}</TableCell>
             <TableCell>{row.totalAttendees}</TableCell>
-            <TableCell>{row.highestAudience}</TableCell>
           </TableRow>
         ))}
       </TableBody>

@@ -2,8 +2,7 @@ import { z } from "zod";
 
 export const loginSchema = z.object({
   email: z.string().trim().min(1, "Email is required.").email("Enter a valid email address."),
-  password: z.string().min(4, "Password must be at least 4 characters."),
-  role: z.enum(["admin", "trainer"])
+  password: z.string().min(4, "Password must be at least 4 characters.")
 });
 
 export const trainerFirstLoginSchema = z
@@ -23,15 +22,17 @@ export const trainerSchema = z.object({
   strengths: z.string().min(2),
   product_categories: z
     .string()
-    .transform((raw) => raw.split(",").map((value) => value.trim()).filter(Boolean))
-    .refine((items) => items.length > 0 && items.length <= 2, "Provide 1 to 2 product categories."),
+    .optional()
+    .default("")
+    .transform((raw) => (raw ?? "").split(",").map((value) => value.trim()).filter(Boolean))
+    .refine((items) => items.length <= 2, "Provide at most 2 product categories."),
   nature_of_business: z.string().min(2),
   phone_number: z.string().min(8),
   email: z.string().email(),
   languages_spoken: z.string().min(2),
   base_city: z.string().min(2),
-  credentials_or_claim_to_fame: z.string().min(2, "Credentials / claim to fame is required."),
-  certifications: z.string().min(2, "Certifications are required."),
+  credentials_or_claim_to_fame: z.string().min(2, "Bio is required."),
+  certifications: z.string().optional().default(""),
   social_media_handles: z.string().min(2, "Social media handles are required.")
 });
 
