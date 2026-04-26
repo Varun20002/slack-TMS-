@@ -1,6 +1,6 @@
 -- IMPORTANT:
 -- 1) Create users first in Supabase Auth:
---    admin@traineros.com, trainer1@traineros.com, trainer2@traineros.com
+--    admin@coindcx.com, trainer1@coindcx.com, trainer2@coindcx.com
 -- 2) Replace the UUID values below with actual auth.users IDs from Supabase.
 
 -- Example UUID placeholders (replace before running):
@@ -10,9 +10,9 @@
 
 insert into public.profiles (id, role, full_name, phone, email)
 values
-  ('9331ae6a-7b71-49cd-8a82-c67414a8928a', 'admin', 'Admin User', '+91-9000000001', 'admin@traineros.com'),
-  ('70c4e3f7-3a9f-4736-8a1d-2a3b986fdcec', 'trainer', 'Aman Verma', '+91-9000000002', 'trainer1@traineros.com'),
-  ('bb05533e-54e6-4e76-9653-c4ff6f3de63f', 'trainer', 'Nisha Iyer', '+91-9000000003', 'trainer2@traineros.com')
+  ('3e5cd66f-f248-4578-a653-83c992a43cb2', 'admin', 'Admin User', '+91-9000000001', 'admin@coindcx.com'),
+  ('213c9d60-8cef-4ae9-a948-549403a15072', 'trainer', 'Aman Verma', '+91-9000000002', 'trainer1@coindcx.com'),
+  ('7921d55f-d71b-4728-897e-6210c323adf9', 'trainer', 'Nisha Iyer', '+91-9000000003', 'trainer2@coindcx.com')
 on conflict (id) do update
 set role = excluded.role,
     full_name = excluded.full_name,
@@ -26,7 +26,7 @@ insert into public.trainers (
 values
   (
     'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa',
-    '70c4e3f7-3a9f-4736-8a1d-2a3b986fdcec',
+    '213c9d60-8cef-4ae9-a948-549403a15072',
     'Aman Verma',
     6,
     'Swing Trader',
@@ -34,7 +34,7 @@ values
     '{"Derivatives","Equity"}',
     'Independent Trainer',
     '+91-9000000002',
-    'trainer1@traineros.com',
+    'trainer1@coindcx.com',
     'English, Hindi',
     'Mumbai',
     'Frequently featured in fintech webinars',
@@ -44,7 +44,7 @@ values
   ),
   (
     'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb',
-    'bb05533e-54e6-4e76-9653-c4ff6f3de63f',
+    '7921d55f-d71b-4728-897e-6210c323adf9',
     'Nisha Iyer',
     8,
     'Positional Investor',
@@ -52,7 +52,7 @@ values
     '{"Mutual Funds","Equity"}',
     'Consulting',
     '+91-9000000003',
-    'trainer2@traineros.com',
+    'trainer2@coindcx.com',
     'English, Tamil',
     'Bengaluru',
     'Known for beginner-friendly sessions',

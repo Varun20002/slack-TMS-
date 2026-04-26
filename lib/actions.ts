@@ -198,6 +198,7 @@ export async function loginAction(input: { email: string; password: string; role
   } else {
     profile = profileWithFlag.data;
   }
+
   if (!profile || profile.role !== input.role) {
     await supabase.auth.signOut();
     return { success: false, message: "This account does not have access to this portal." };
