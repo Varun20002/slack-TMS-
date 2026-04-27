@@ -185,7 +185,83 @@ function employeeAltDecisionBlocks(requestId: string) {
   ];
 }
 
-function growthChecklistBlocks(requestRow: any, items: Array<{ item: string; completed: boolean; updated_by: string | null }>) {
+type GrowthCardContext = {
+  trainer: {
+    name: string;
+    experience: number | null;
+    persona: string | null;
+    strengths: string | null;
+    bio: string | null;
+    languages: string | null;
+    city: string | null;
+    imageUrl: string | null;
+  } | null;
+  brief: {
+    driTeam: string | null;
+    goals: string | null;
+    persona: string | null;
+    behaviour: string | null;
+    coreMessage: string | null;
+    metrics: string | null;
+    requirements: string | null;
+    durationMinutes: number | null;
+  };
+};
+
+async function fetchGrowthCardContext(supabase: any, requestId: string): Promise<GrowthCardContext> {
+  const { data: auditRow } = await supabase
+    .from("audit_log")
+    .select("metadata")
+    .eq("request_id", requestId)
+    .eq("action", "submit_slack_webinar_request")
+    .order("created_at", { ascending: true })
+    .limit(1)
+    .maybeSingle();
+
+  const meta = (auditRow?.metadata ?? {}) as Record<string, unknown>;
+
+  const brief: GrowthCardContext["brief"] = {
+    driTeam: (meta.dri_team as string) || null,
+    goals: (meta.goals as string) || null,
+    persona: (meta.persona as string) || null,
+    behaviour: (meta.behaviour as string) || null,
+    coreMessage: (meta.core_message as string) || null,
+    metrics: (meta.metrics as string) || null,
+    requirements: (meta.requirements as string) || null,
+    durationMinutes: typeof meta.duration_minutes === "number" ? meta.duration_minutes : null
+  };
+
+  const trainerId = typeof meta.trainer_id === "string" ? meta.trainer_id : null;
+  let trainer: GrowthCardContext["trainer"] = null;
+
+  if (trainerId) {
+    const { data: t } = await supabase
+      .from("trainers")
+      .select("name, experience, investing_trading_persona, strengths, credentials_or_claim_to_fame, languages_spoken, base_city, profile_image_url")
+      .eq("id", trainerId)
+      .maybeSingle();
+    if (t) {
+      trainer = {
+        name: t.name,
+        experience: typeof t.experience === "number" ? t.experience : null,
+        persona: t.investing_trading_persona || null,
+        strengths: t.strengths || null,
+        bio: t.credentials_or_claim_to_fame || null,
+        languages: t.languages_spoken || null,
+        city: t.base_city || null,
+        imageUrl: t.profile_image_url || null
+      };
+    }
+  }
+
+  return { trainer, brief };
+}
+
+function growthChecklistBlocks(
+  requestRow: any,
+  items: Array<{ item: string; completed: boolean; updated_by: string | null }>,
+  ctx?: GrowthCardContext
+) {
   const byItem = new Map(items.map((item) => [item.item, item]));
   const elements = CHECKLIST_KEYS.map((key) => {
     const row = byItem.get(key);
@@ -205,23 +281,87 @@ function growthChecklistBlocks(requestRow: any, items: Array<{ item: string; com
     value: requestRow.id
   });
 
-  return [
-    { type: "header", text: { type: "plain_text", text: "Growth check list", emoji: true } },
-    {
+  const blocks: any[] = [
+    { type: "header", text: { type: "plain_text", text: "📋 Webinar Content Checklist", emoji: true } }
+  ];
+
+  if (ctx?.trainer) {
+    const t = ctx.trainer;
+    blocks.push({ type: "divider" });
+
+    if (t.imageUrl) {
+      blocks.push({
+        type: "image",
+        image_url: t.imageUrl,
+        alt_text: `${t.name} profile photo`,
+        title: { type: "plain_text", text: `${t.name}` }
+      });
+    }
+
+    blocks.push({
       type: "section",
       fields: [
-        { type: "mrkdwn", text: `*Topic*\n${requestRow.topic}` },
-        { type: "mrkdwn", text: `*Trainer*\n${requestRow.trainer_name}` },
-        { type: "mrkdwn", text: `*Scheduled*\n${formatDate(requestRow.requested_date)}` },
-        { type: "mrkdwn", text: `*Request ID*\n\`${requestRow.id}\`` }
+        { type: "mrkdwn", text: `*Trainer*\n${t.name}` },
+        { type: "mrkdwn", text: `*Experience*\n${t.experience != null ? `${t.experience} years` : "—"}` },
+        { type: "mrkdwn", text: `*Persona*\n${t.persona ?? "—"}` },
+        { type: "mrkdwn", text: `*Strengths*\n${t.strengths ?? "—"}` },
+        { type: "mrkdwn", text: `*City*\n${t.city ?? "—"}` },
+        { type: "mrkdwn", text: `*Languages*\n${t.languages ?? "—"}` }
       ]
-    },
-    {
-      type: "actions",
-      block_id: `growth_cl_${requestRow.id}`,
-      elements
+    });
+
+    if (t.bio) {
+      blocks.push({ type: "section", text: { type: "mrkdwn", text: `*Bio*\n${t.bio}` } });
     }
-  ];
+
+    if (t.imageUrl) {
+      blocks.push({
+        type: "context",
+        elements: [{ type: "mrkdwn", text: `📸 <${t.imageUrl}|Download trainer photo>` }]
+      });
+    }
+  }
+
+  const b = ctx?.brief;
+  blocks.push({ type: "divider" });
+  blocks.push({
+    type: "section",
+    fields: [
+      { type: "mrkdwn", text: `*Webinar*\n${requestRow.topic}` },
+      { type: "mrkdwn", text: `*DRI Team*\n${b?.driTeam ?? "—"}` },
+      { type: "mrkdwn", text: `*Scheduled*\n${formatDate(requestRow.requested_date)}` },
+      { type: "mrkdwn", text: `*Duration*\n${b?.durationMinutes ? `${b.durationMinutes} min` : "—"}` }
+    ]
+  });
+
+  if (b?.goals) {
+    blocks.push({ type: "section", text: { type: "mrkdwn", text: `*Goals*\n${b.goals}` } });
+  }
+  if (b?.persona) {
+    blocks.push({ type: "section", text: { type: "mrkdwn", text: `*Target Persona*\n${b.persona}` } });
+  }
+  if (b?.coreMessage) {
+    blocks.push({ type: "section", text: { type: "mrkdwn", text: `*Core Message*\n${b.coreMessage}` } });
+  }
+  if (b?.metrics) {
+    blocks.push({ type: "section", text: { type: "mrkdwn", text: `*Metrics to Drive*\n${b.metrics}` } });
+  }
+  if (b?.requirements) {
+    blocks.push({ type: "section", text: { type: "mrkdwn", text: `*Do's and Don'ts*\n${b.requirements}` } });
+  }
+
+  blocks.push({ type: "divider" });
+  blocks.push({
+    type: "actions",
+    block_id: `growth_cl_${requestRow.id}`,
+    elements
+  });
+  blocks.push({
+    type: "context",
+    elements: [{ type: "mrkdwn", text: `Request ID: \`${requestRow.id}\`` }]
+  });
+
+  return blocks;
 }
 
 async function dmUser(userId: string, text: string, blocks?: any[]) {
@@ -487,14 +627,17 @@ async function ensureChecklistAndPostToGrowth(params: { supabase: any; requestId
     action: "growth_checklist_started"
   });
 
-  const { data: req } = await supabase.from("webinar_requests").select("*").eq("id", requestId).maybeSingle();
+  const [{ data: req }, { data: items }, ctx] = await Promise.all([
+    supabase.from("webinar_requests").select("*").eq("id", requestId).maybeSingle(),
+    supabase.from("content_checklist").select("item, completed, updated_by").eq("request_id", requestId),
+    fetchGrowthCardContext(supabase, requestId)
+  ]);
   if (!req) return;
-  const { data: items } = await supabase.from("content_checklist").select("item, completed, updated_by").eq("request_id", requestId);
 
   const post = (await slackApi("/chat.postMessage", {
     channel: requireEnv("GROWTH_CHANNEL_ID"),
     text: `Content checklist: ${req.topic}`,
-    blocks: growthChecklistBlocks(req, items ?? [])
+    blocks: growthChecklistBlocks(req, items ?? [], ctx)
   })) as any;
 
   if (post.channel && post.ts) {
@@ -1576,13 +1719,16 @@ async function handleGrowthToggle(payload: any) {
   }).eq("id", current.id);
 
   await supabase.from("webinar_requests").update({ growth_slack_id: payload.user?.id ?? null }).eq("id", requestId);
-  const { data: items } = await supabase.from("content_checklist").select("item, completed, updated_by").eq("request_id", requestId);
+  const [{ data: items }, ctx] = await Promise.all([
+    supabase.from("content_checklist").select("item, completed, updated_by").eq("request_id", requestId),
+    fetchGrowthCardContext(supabase, requestId)
+  ]);
 
   await slackApi("/chat.update", {
     channel: req.growth_channel_id,
     ts: req.growth_message_ts,
     text: `Content checklist: ${req.topic}`,
-    blocks: growthChecklistBlocks(req, items ?? [])
+    blocks: growthChecklistBlocks(req, items ?? [], ctx)
   });
 }
 
