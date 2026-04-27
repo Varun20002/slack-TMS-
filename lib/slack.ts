@@ -52,8 +52,11 @@ export async function slackApi(path: string, payload: Record<string, unknown>, o
     signal: controller.signal
   }).finally(() => clearTimeout(timeout));
 
-  const json = (await response.json()) as { ok: boolean; error?: string };
+  const json = (await response.json()) as { ok: boolean; error?: string; response_metadata?: any };
   if (!json.ok) {
+    // #region agent log
+    console.log("[DEBUG-546f3a] slackApi error detail", { path, error: json.error, response_metadata: json.response_metadata });
+    // #endregion
     throw new Error(json.error || `Slack API error for ${path}`);
   }
   return json;
