@@ -865,7 +865,6 @@ function buildScheduleModal(params: {
           type: "datepicker",
           action_id: "request_date",
           placeholder: { type: "plain_text", text: "Select date" },
-          min_date: new Date().toISOString().slice(0, 10),
           ...(draft.request_date ? { initial_date: draft.request_date } : {})
         }
       },
@@ -1075,6 +1074,12 @@ async function handleScheduleSubmit(payload: any) {
     return {
       response_action: "errors",
       errors: { time_block: "Select a valid available timing." }
+    };
+  }
+  if (collected.request_date && collected.request_date < new Date().toISOString().slice(0, 10)) {
+    return {
+      response_action: "errors",
+      errors: { date_block: "Date cannot be in the past. Please select today or a future date." }
     };
   }
   const parsed = slackWebinarSchema.safeParse(collected);
