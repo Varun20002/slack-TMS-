@@ -785,20 +785,30 @@ async function buildAvailabilityCalendar(
   const lastDay = new Date(startDate);
   lastDay.setDate(lastDay.getDate() + 6);
 
-  const navButtons: any[] = [];
+  const navBlocks: any[] = [];
   if (weekOffset > 0) {
-    navButtons.push({
-      type: "button",
-      text: { type: "plain_text", text: "◀ Prev Week" },
-      action_id: "cal_nav_prev",
-      value: String(weekOffset - 1)
+    navBlocks.push({
+      type: "section",
+      block_id: `cal_nav_prev_block_${weekOffset}`,
+      text: { type: "mrkdwn", text: "◀ Previous week" },
+      accessory: {
+        type: "button",
+        text: { type: "plain_text", text: "◀ Prev Week" },
+        action_id: "cal_nav_prev",
+        value: String(weekOffset - 1)
+      }
     });
   }
-  navButtons.push({
-    type: "button",
-    text: { type: "plain_text", text: "Next Week ▶" },
-    action_id: "cal_nav_next",
-    value: String(weekOffset + 1)
+  navBlocks.push({
+    type: "section",
+    block_id: `cal_nav_next_block_${weekOffset}`,
+    text: { type: "mrkdwn", text: "Next week ▶" },
+    accessory: {
+      type: "button",
+      text: { type: "plain_text", text: "Next Week ▶" },
+      action_id: "cal_nav_next",
+      value: String(weekOffset + 1)
+    }
   });
 
   return [
@@ -814,11 +824,7 @@ async function buildAvailabilityCalendar(
       type: "context",
       elements: [{ type: "mrkdwn", text: "🟩 Available    🔴 Booked" }]
     },
-    {
-      type: "actions",
-      block_id: `cal_nav_${weekOffset}`,
-      elements: navButtons
-    }
+    ...navBlocks
   ];
 }
 
