@@ -627,18 +627,40 @@ async function buildAvailableTimeOptions(supabase: any, trainerId: string, reque
   }
 
   const dayOfWeek = dayOfWeekFromDate(requestDate);
-  const { data: rows } = await supabase
-    .from("trainer_availability")
-    .select("start_time,end_time")
-    .eq("trainer_id", trainerId)
-    .eq("day_of_week", dayOfWeek)
-    .order("start_time", { ascending: true });
+  const [{ data: rows }, { data: webinarRows }] = await Promise.all([
+    supabase
+      .from("trainer_availability")
+      .select("start_time,end_time")
+      .eq("trainer_id", trainerId)
+      .eq("day_of_week", dayOfWeek)
+      .order("start_time", { ascending: true }),
+    supabase
+      .from("webinars")
+      .select("webinar_timing, duration_minutes")
+      .eq("trainer_id", trainerId)
+      .neq("status", "cancelled")
+      .gte("webinar_timing", `${requestDate}T00:00:00`)
+      .lt("webinar_timing", `${requestDate}T23:59:59`)
+  ]);
+
+  const bookedRanges: Array<{ start: number; end: number }> = [];
+  for (const w of webinarRows ?? []) {
+    const dt = new Date(w.webinar_timing);
+    const wStart = dt.getHours() * 60 + dt.getMinutes();
+    const wEnd = wStart + (w.duration_minutes ?? 60);
+    bookedRanges.push({ start: wStart, end: wEnd });
+  }
+
+  function overlapsBooked(slotStart: number, slotEnd: number) {
+    return bookedRanges.some((b) => slotStart < b.end && slotEnd > b.start);
+  }
 
   const options: Array<{ text: { type: "plain_text"; text: string }; value: string }> = [];
   for (const row of rows ?? []) {
     const start = parseTimeToMinutes(String(row.start_time).slice(0, 5));
     const end = parseTimeToMinutes(String(row.end_time).slice(0, 5));
     for (let cursor = start; cursor + durationMinutes <= end; cursor += 30) {
+      if (overlapsBooked(cursor, cursor + durationMinutes)) continue;
       const label = minutesToTimeLabel(cursor);
       options.push({ text: { type: "plain_text", text: label }, value: label });
     }
@@ -670,6 +692,136 @@ async function buildAvailabilityHint(supabase: any, trainerId: string, requestDa
   return `Trainer available on: ${dayLabels}.`;
 }
 
+const MONTH_LABELS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"] as const;
+
+function formatCalDate(d: Date) {
+  return `${WEEKDAY_LABELS[d.getDay()]} ${String(d.getDate()).padStart(2, "0")} ${MONTH_LABELS[d.getMonth()]}`;
+}
+
+function formatDateRange(start: Date, end: Date) {
+  return `${String(start.getDate()).padStart(2, "0")} ${MONTH_LABELS[start.getMonth()]} – ${String(end.getDate()).padStart(2, "0")} ${MONTH_LABELS[end.getMonth()]}`;
+}
+
+async function buildAvailabilityCalendar(
+  supabase: any,
+  trainerId: string,
+  trainerName: string,
+  weekOffset: number
+): Promise<any[]> {
+  if (!trainerId) return [];
+
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const startDate = new Date(today);
+  startDate.setDate(startDate.getDate() + weekOffset * 7);
+  const endDate = new Date(startDate);
+  endDate.setDate(endDate.getDate() + 7);
+
+  const [{ data: availRows }, { data: webinarRows }] = await Promise.all([
+    supabase
+      .from("trainer_availability")
+      .select("day_of_week, start_time, end_time")
+      .eq("trainer_id", trainerId)
+      .order("start_time", { ascending: true }),
+    supabase
+      .from("webinars")
+      .select("title, webinar_timing, duration_minutes, status")
+      .eq("trainer_id", trainerId)
+      .neq("status", "cancelled")
+      .gte("webinar_timing", startDate.toISOString())
+      .lt("webinar_timing", endDate.toISOString())
+      .order("webinar_timing", { ascending: true })
+  ]);
+
+  const availByDay = new Map<number, Array<{ start: string; end: string }>>();
+  for (const row of availRows ?? []) {
+    const day = row.day_of_week as number;
+    if (!availByDay.has(day)) availByDay.set(day, []);
+    availByDay.get(day)!.push({
+      start: String(row.start_time).slice(0, 5),
+      end: String(row.end_time).slice(0, 5)
+    });
+  }
+
+  const webinarsByDate = new Map<string, Array<{ title: string; start: string; end: string }>>();
+  for (const w of webinarRows ?? []) {
+    const dt = new Date(w.webinar_timing);
+    const key = `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, "0")}-${String(dt.getDate()).padStart(2, "0")}`;
+    if (!webinarsByDate.has(key)) webinarsByDate.set(key, []);
+    const startMin = dt.getHours() * 60 + dt.getMinutes();
+    const endMin = startMin + (w.duration_minutes ?? 60);
+    webinarsByDate.get(key)!.push({
+      title: (w.title ?? "").slice(0, 20),
+      start: minutesToTimeLabel(startMin),
+      end: minutesToTimeLabel(endMin)
+    });
+  }
+
+  const lines: string[] = [];
+  for (let i = 0; i < 7; i++) {
+    const d = new Date(startDate);
+    d.setDate(d.getDate() + i);
+    const dow = d.getDay();
+    const dateKey = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+    const dayLabel = formatCalDate(d);
+    const slots = availByDay.get(dow) ?? [];
+    const booked = webinarsByDate.get(dateKey) ?? [];
+
+    if (!slots.length && !booked.length) {
+      lines.push(`*${dayLabel}*  _No availability_`);
+      continue;
+    }
+
+    const parts: string[] = [];
+    for (const s of slots) {
+      parts.push(`🟩 ${s.start}–${s.end}`);
+    }
+    for (const b of booked) {
+      parts.push(`🔴 ${b.start}–${b.end} ${b.title}`);
+    }
+    lines.push(`*${dayLabel}*  ${parts.join("  ")}`);
+  }
+
+  const lastDay = new Date(startDate);
+  lastDay.setDate(lastDay.getDate() + 6);
+
+  const navButtons: any[] = [];
+  if (weekOffset > 0) {
+    navButtons.push({
+      type: "button",
+      text: { type: "plain_text", text: "◀ Prev Week" },
+      action_id: "cal_nav_prev",
+      value: String(weekOffset - 1)
+    });
+  }
+  navButtons.push({
+    type: "button",
+    text: { type: "plain_text", text: "Next Week ▶" },
+    action_id: "cal_nav_next",
+    value: String(weekOffset + 1)
+  });
+
+  return [
+    {
+      type: "section",
+      text: { type: "mrkdwn", text: `*📅  ${trainerName} — ${formatDateRange(startDate, lastDay)}*` }
+    },
+    {
+      type: "section",
+      text: { type: "mrkdwn", text: lines.join("\n") }
+    },
+    {
+      type: "context",
+      elements: [{ type: "mrkdwn", text: "🟩 Available    🔴 Booked" }]
+    },
+    {
+      type: "actions",
+      block_id: `cal_nav_${weekOffset}`,
+      elements: navButtons
+    }
+  ];
+}
+
 function getScheduleDraft(payload: any): ScheduleDraft {
   const state = payload.view?.state?.values;
   return {
@@ -697,8 +849,9 @@ function buildScheduleModal(params: {
   availabilityHint: string;
   privateMetadata: string;
   trainerPreview: TrainerPreview | null;
+  calendarBlocks?: any[];
 }) {
-  const { draft, trainerOptions, timeOptions, availabilityHint, privateMetadata, trainerPreview } = params;
+  const { draft, trainerOptions, timeOptions, availabilityHint, privateMetadata, trainerPreview, calendarBlocks = [] } = params;
   const selectedDuration = durationOptions().find((opt) => opt.value === draft.duration_minutes);
   const selectedTrainer = trainerOptions.find((opt) => opt.value === draft.trainer_id);
   const selectedStartTime = timeOptions.find((opt) => opt.value === draft.start_time);
@@ -856,6 +1009,7 @@ function buildScheduleModal(params: {
               elements: [{ type: "mrkdwn", text: "Select a trainer to view profile preview." }]
             }
           ]),
+      ...calendarBlocks,
       {
         type: "input",
         block_id: "date_block",
@@ -865,6 +1019,7 @@ function buildScheduleModal(params: {
           type: "datepicker",
           action_id: "request_date",
           placeholder: { type: "plain_text", text: "Select date" },
+          min_date: new Date().toISOString().slice(0, 10),
           ...(draft.request_date ? { initial_date: draft.request_date } : {})
         }
       },
@@ -1076,12 +1231,6 @@ async function handleScheduleSubmit(payload: any) {
       errors: { time_block: "Select a valid available timing." }
     };
   }
-  if (collected.request_date && collected.request_date < new Date().toISOString().slice(0, 10)) {
-    return {
-      response_action: "errors",
-      errors: { date_block: "Date cannot be in the past. Please select today or a future date." }
-    };
-  }
   const parsed = slackWebinarSchema.safeParse(collected);
   if (!parsed.success) {
     const issue = parsed.error.issues[0];
@@ -1136,7 +1285,12 @@ async function handleScheduleModalBlockAction(payload: any) {
   if (callbackId !== "webinar_schedule_modal") return false;
 
   const actionId = payload.actions?.[0]?.action_id as string | undefined;
-  if (!actionId || !["trainer_id", "request_date", "duration_minutes", "start_time"].includes(actionId)) return false;
+  const KNOWN_ACTIONS = ["trainer_id", "request_date", "duration_minutes", "start_time", "cal_nav_prev", "cal_nav_next"];
+  if (!actionId || !KNOWN_ACTIONS.includes(actionId)) return false;
+
+  // #region agent log
+  console.log("[DEBUG-546f3a] blockAction entered", { actionId, callbackId, trainerId: payload.view?.state?.values?.trainer_block?.trainer_id?.selected_option?.value });
+  // #endregion
 
   const supabase = createAdminClient() as any;
   const draft = getScheduleDraft(payload);
@@ -1147,25 +1301,47 @@ async function handleScheduleModalBlockAction(payload: any) {
   const hasSlots = timeOptions.some((option) => option.value !== NO_SLOT_VALUE);
   const availabilityHint = await buildAvailabilityHint(supabase, draft.trainer_id, draft.request_date, hasSlots);
 
+  let weekOffset = 0;
+  if (actionId === "cal_nav_prev" || actionId === "cal_nav_next") {
+    weekOffset = Number(payload.actions[0].value ?? 0);
+  }
+
   if ((actionId === "trainer_id" || actionId === "request_date") && draft.start_time) {
     draft.start_time = "";
-  } else if (actionId !== "start_time" && draft.start_time) {
+  } else if (!["start_time", "cal_nav_prev", "cal_nav_next"].includes(actionId) && draft.start_time) {
     const stillValid = timeOptions.some((option) => option.value === draft.start_time);
     if (!stillValid) draft.start_time = "";
   }
 
-  await slackApi("/views.update", {
-    view_id: payload.view.id,
-    hash: payload.view.hash,
-    view: buildScheduleModal({
-      draft,
-      trainerOptions,
-      timeOptions,
-      availabilityHint,
-      privateMetadata: payload.view.private_metadata ?? "{}",
-      trainerPreview
-    })
-  });
+  const trainerName = trainerOptions.find((o: any) => o.value === draft.trainer_id)?.text?.text ?? "";
+  const calendarBlocks = await buildAvailabilityCalendar(supabase, draft.trainer_id, trainerName, weekOffset);
+
+  // #region agent log
+  console.log("[DEBUG-546f3a] calendar built", { trainerId: draft.trainer_id, trainerName, weekOffset, calendarBlockCount: calendarBlocks.length });
+  // #endregion
+
+  try {
+    const result = await slackApi("/views.update", {
+      view_id: payload.view.id,
+      hash: payload.view.hash,
+      view: buildScheduleModal({
+        draft,
+        trainerOptions,
+        timeOptions,
+        availabilityHint,
+        privateMetadata: payload.view.private_metadata ?? "{}",
+        trainerPreview,
+        calendarBlocks
+      })
+    });
+    // #region agent log
+    console.log("[DEBUG-546f3a] views.update succeeded", { ok: result?.ok });
+    // #endregion
+  } catch (err: any) {
+    // #region agent log
+    console.log("[DEBUG-546f3a] views.update FAILED", { error: err?.message ?? String(err) });
+    // #endregion
+  }
 
   return true;
 }
