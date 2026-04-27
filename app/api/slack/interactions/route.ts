@@ -1267,10 +1267,6 @@ async function handleScheduleModalBlockAction(payload: any) {
   const KNOWN_ACTIONS = ["trainer_id", "request_date", "duration_minutes", "start_time", "cal_nav_prev", "cal_nav_next"];
   if (!actionId || !KNOWN_ACTIONS.includes(actionId)) return false;
 
-  // #region agent log
-  console.log("[DEBUG-546f3a] blockAction entered", { actionId, callbackId, trainerId: payload.view?.state?.values?.trainer_block?.trainer_id?.selected_option?.value });
-  // #endregion
-
   const supabase = createAdminClient() as any;
   const draft = getScheduleDraft(payload);
   const trainerOptions = await buildTrainerOptions(supabase);
@@ -1295,10 +1291,6 @@ async function handleScheduleModalBlockAction(payload: any) {
   const trainerName = trainerOptions.find((o: any) => o.value === draft.trainer_id)?.text?.text ?? "";
   const calendarBlocks = await buildAvailabilityCalendar(supabase, draft.trainer_id, trainerName, weekOffset);
 
-  // #region agent log
-  console.log("[DEBUG-546f3a] calendar built", { trainerId: draft.trainer_id, trainerName, weekOffset, calendarBlockCount: calendarBlocks.length });
-  // #endregion
-
   const modalView = buildScheduleModal({
     draft,
     trainerOptions,
@@ -1316,11 +1308,11 @@ async function handleScheduleModalBlockAction(payload: any) {
       view: modalView
     });
     // #region agent log
-    console.log("[DEBUG-546f3a] views.update succeeded", { ok: result?.ok });
+    console.log("[DEBUG-546f3a] RESULT", { actionId, calBlocks: calendarBlocks.length, totalBlocks: modalView?.blocks?.length, ok: result?.ok });
     // #endregion
   } catch (err: any) {
     // #region agent log
-    console.log("[DEBUG-546f3a] views.update FAILED", { error: err?.message ?? String(err) });
+    console.log("[DEBUG-546f3a] FAILED", { actionId, calBlocks: calendarBlocks.length, error: err?.message ?? String(err) });
     // #endregion
     if (err?.message === "hash_conflict") {
       try {
