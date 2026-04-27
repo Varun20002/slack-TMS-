@@ -289,24 +289,11 @@ function growthChecklistBlocks(
     const t = ctx.trainer;
     blocks.push({ type: "divider" });
 
-    if (t.imageUrl) {
-      blocks.push({
-        type: "image",
-        image_url: t.imageUrl,
-        alt_text: `${t.name} profile photo`,
-        title: { type: "plain_text", text: `${t.name}` }
-      });
-    }
-
     blocks.push({
       type: "section",
       fields: [
         { type: "mrkdwn", text: `*Trainer*\n${t.name}` },
-        { type: "mrkdwn", text: `*Experience*\n${t.experience != null ? `${t.experience} years` : "—"}` },
-        { type: "mrkdwn", text: `*Persona*\n${t.persona ?? "—"}` },
-        { type: "mrkdwn", text: `*Strengths*\n${t.strengths ?? "—"}` },
-        { type: "mrkdwn", text: `*City*\n${t.city ?? "—"}` },
-        { type: "mrkdwn", text: `*Languages*\n${t.languages ?? "—"}` }
+        { type: "mrkdwn", text: `*Experience*\n${t.experience != null ? `${t.experience} years` : "—"}` }
       ]
     });
 
