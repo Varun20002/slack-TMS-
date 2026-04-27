@@ -28,14 +28,22 @@ const NO_SLOT_VALUE = "__no_slot__";
 const WEEKDAY_LABELS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"] as const;
 
 const slackWebinarSchema = z.object({
-  title: z.string().min(3),
+  // Brief fields
+  dri_team: z.string().min(1, "DRI team is required."),
+  title: z.string().min(3, "Webinar name must be at least 3 characters."),
+  goals: z.string().min(1, "Goals are required."),
+  persona: z.string().min(1, "Persona is required."),
+  behaviour: z.string().optional(),
+  core_message: z.string().min(1, "Core message is required."),
+  metrics: z.string().min(1, "Metrics are required."),
+  // Scheduling fields
   trainer_id: z.string().min(1),
   request_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
   start_time: z.string().regex(/^\d{2}:\d{2}$/),
   attendees_est: z.coerce.number().int().min(0).default(0),
   duration_minutes: z.coerce.number().int().refine((v) => DURATION_VALUES.includes(v as any), { message: "Duration must be between 30 and 180 minutes." }),
-  requirements: z.string().optional(),
-  target_user_base: z.string().optional()
+  // dos_donts stored under existing `requirements` key for backward compat
+  requirements: z.string().min(1, "Do's and Don'ts are required.")
 });
 
 export async function GET() {
@@ -72,14 +80,19 @@ function requireEnv(name: "BP_CHANNEL_ID" | "GROWTH_CHANNEL_ID" | "OPS_CHANNEL_I
 }
 
 function slackErrorField(path: string) {
+  if (path === "dri_team") return "dri_team_block";
   if (path === "title") return "title_block";
+  if (path === "goals") return "goals_block";
+  if (path === "persona") return "persona_block";
+  if (path === "behaviour") return "behaviour_block";
+  if (path === "core_message") return "core_message_block";
+  if (path === "metrics") return "metrics_block";
+  if (path === "requirements") return "dos_donts_block";
   if (path === "trainer_id") return "trainer_block";
   if (path === "request_date") return "date_block";
   if (path === "start_time") return "time_block";
   if (path === "attendees_est") return "attendees_block";
   if (path === "duration_minutes") return "duration_block";
-  if (path === "requirements") return "requirements_block";
-  if (path === "target_user_base") return "target_user_base_block";
   return "title_block";
 }
 
@@ -120,19 +133,32 @@ function bpRequestCard(params: {
   requestedDate: string;
   attendees: number;
   employeeName: string;
+  driTeam?: string;
+  goals?: string;
+  metrics?: string;
 }) {
   return [
     { type: "header", text: { type: "plain_text", text: "New webinar request", emoji: true } },
     {
       type: "section",
       fields: [
-        { type: "mrkdwn", text: `*Topic*\n${params.topic}` },
+        { type: "mrkdwn", text: `*Webinar Name*\n${params.topic}` },
         { type: "mrkdwn", text: `*Trainer*\n${params.trainerName}` },
         { type: "mrkdwn", text: `*Preferred time*\n${formatDate(params.requestedDate)}` },
         { type: "mrkdwn", text: `*Est. attendees*\n${params.attendees}` },
         { type: "mrkdwn", text: `*Requested by*\n${params.employeeName}` },
-        { type: "mrkdwn", text: `*Request ID*\n\`${params.requestId}\`` }
+        { type: "mrkdwn", text: `*DRI Team*\n${params.driTeam ?? "—"}` }
       ]
+    },
+    ...(params.goals
+      ? [{ type: "section", text: { type: "mrkdwn", text: `*Goals*\n${params.goals}` } }]
+      : []),
+    ...(params.metrics
+      ? [{ type: "section", text: { type: "mrkdwn", text: `*Metrics to Drive*\n${params.metrics}` } }]
+      : []),
+    {
+      type: "context",
+      elements: [{ type: "mrkdwn", text: `Request ID: \`${params.requestId}\`` }]
     },
     {
       type: "actions",
@@ -516,14 +542,21 @@ function altDateModal(requestId: string) {
 }
 
 type ScheduleDraft = {
+  // Brief
+  dri_team: string;
   title: string;
+  goals: string;
+  persona: string;
+  behaviour: string;
+  core_message: string;
+  metrics: string;
+  // Scheduling
   trainer_id: string;
   request_date: string;
   duration_minutes: string;
   start_time: string;
   attendees_est: string;
   requirements: string;
-  target_user_base: string;
 };
 
 type TrainerPreview = {
@@ -646,14 +679,21 @@ async function buildAvailabilityHint(supabase: any, trainerId: string, requestDa
 function getScheduleDraft(payload: any): ScheduleDraft {
   const state = payload.view?.state?.values;
   return {
+    // Brief
+    dri_team: getInput(state, "dri_team_block", "dri_team")?.value ?? "",
     title: getInput(state, "title_block", "title")?.value ?? "",
+    goals: getInput(state, "goals_block", "goals")?.value ?? "",
+    persona: getInput(state, "persona_block", "persona")?.value ?? "",
+    behaviour: getInput(state, "behaviour_block", "behaviour")?.value ?? "",
+    core_message: getInput(state, "core_message_block", "core_message")?.value ?? "",
+    metrics: getInput(state, "metrics_block", "metrics")?.value ?? "",
+    // Scheduling
     trainer_id: getInput(state, "trainer_block", "trainer_id")?.selected_option?.value ?? "",
     request_date: getInput(state, "date_block", "request_date")?.selected_date ?? "",
     duration_minutes: getInput(state, "duration_block", "duration_minutes")?.selected_option?.value ?? "",
     start_time: getInput(state, "time_block", "start_time")?.selected_option?.value ?? "",
     attendees_est: getInput(state, "attendees_block", "attendees_est")?.value ?? "0",
-    requirements: getInput(state, "requirements_block", "requirements")?.value ?? "",
-    target_user_base: getInput(state, "target_user_base_block", "target_user_base")?.value ?? ""
+    requirements: getInput(state, "dos_donts_block", "requirements")?.value ?? ""
   };
 }
 
@@ -678,11 +718,112 @@ function buildScheduleModal(params: {
     close: { type: "plain_text", text: "Cancel" },
     private_metadata: privateMetadata,
     blocks: [
+      // ── Section 1: Brief ─────────────────────────────────────────────────
+      {
+        type: "section",
+        text: { type: "mrkdwn", text: "*📋 Request Brief*" }
+      },
+      {
+        type: "input",
+        block_id: "dri_team_block",
+        label: { type: "plain_text", text: "Which Team does the DRI belong to?" },
+        element: {
+          type: "plain_text_input",
+          action_id: "dri_team",
+          placeholder: { type: "plain_text", text: "e.g. Growth, Product, BD" },
+          ...(draft.dri_team ? { initial_value: draft.dri_team } : {})
+        }
+      },
       {
         type: "input",
         block_id: "title_block",
-        label: { type: "plain_text", text: "Title" },
-        element: { type: "plain_text_input", action_id: "title", placeholder: { type: "plain_text", text: "Webinar title" }, initial_value: draft.title || undefined }
+        label: { type: "plain_text", text: "Webinar Name (as per campaign comms)" },
+        element: {
+          type: "plain_text_input",
+          action_id: "title",
+          placeholder: { type: "plain_text", text: "As it will appear in campaign materials" },
+          ...(draft.title ? { initial_value: draft.title } : {})
+        }
+      },
+      {
+        type: "input",
+        block_id: "goals_block",
+        label: { type: "plain_text", text: "What Goals is this webinar helping to achieve?" },
+        hint: { type: "plain_text", text: "Include clear metrics. Requests without metrics may be deprioritised." },
+        element: {
+          type: "plain_text_input",
+          action_id: "goals",
+          multiline: true,
+          placeholder: { type: "plain_text", text: "State goals and measurable metrics clearly" },
+          ...(draft.goals ? { initial_value: draft.goals } : {})
+        }
+      },
+      {
+        type: "input",
+        block_id: "persona_block",
+        label: { type: "plain_text", text: "What is the persona of your target group?" },
+        element: {
+          type: "plain_text_input",
+          action_id: "persona",
+          placeholder: { type: "plain_text", text: "e.g. First-time investors aged 25-35, NAP users" },
+          ...(draft.persona ? { initial_value: draft.persona } : {})
+        }
+      },
+      {
+        type: "input",
+        block_id: "behaviour_block",
+        optional: true,
+        label: { type: "plain_text", text: "How is the target group behaving today, and what behavioural change signals success?" },
+        element: {
+          type: "plain_text_input",
+          action_id: "behaviour",
+          multiline: true,
+          placeholder: { type: "plain_text", text: "Describe current behaviour and the desired shift" },
+          ...(draft.behaviour ? { initial_value: draft.behaviour } : {})
+        }
+      },
+      {
+        type: "input",
+        block_id: "core_message_block",
+        label: { type: "plain_text", text: "What is the core message you are trying to convey?" },
+        element: {
+          type: "plain_text_input",
+          action_id: "core_message",
+          multiline: true,
+          placeholder: { type: "plain_text", text: "The single key takeaway for attendees" },
+          ...(draft.core_message ? { initial_value: draft.core_message } : {})
+        }
+      },
+      {
+        type: "input",
+        block_id: "metrics_block",
+        label: { type: "plain_text", text: "What metrics are you trying to drive with this webinar?" },
+        hint: { type: "plain_text", text: "e.g. UNAP, FNAP, NAP, No of API users, Volume" },
+        element: {
+          type: "plain_text_input",
+          action_id: "metrics",
+          placeholder: { type: "plain_text", text: "List metrics you want to move" },
+          ...(draft.metrics ? { initial_value: draft.metrics } : {})
+        }
+      },
+      {
+        type: "input",
+        block_id: "dos_donts_block",
+        label: { type: "plain_text", text: "Critical Do's and Don'ts for the trainer" },
+        element: {
+          type: "plain_text_input",
+          action_id: "requirements",
+          multiline: true,
+          placeholder: { type: "plain_text", text: "Words, phrases, concepts to use or avoid" },
+          ...(draft.requirements ? { initial_value: draft.requirements } : {})
+        }
+      },
+      // ── Divider ────────────────────────────────────────────────────────────
+      { type: "divider" },
+      // ── Section 2: Scheduling ──────────────────────────────────────────────
+      {
+        type: "section",
+        text: { type: "mrkdwn", text: "*🗓 Scheduling*" }
       },
       {
         type: "input",
@@ -768,21 +909,12 @@ function buildScheduleModal(params: {
         block_id: "attendees_block",
         optional: true,
         label: { type: "plain_text", text: "Expected Attendees" },
-        element: { type: "plain_text_input", action_id: "attendees_est", placeholder: { type: "plain_text", text: "e.g. 120" }, initial_value: draft.attendees_est || undefined }
-      },
-      {
-        type: "input",
-        block_id: "requirements_block",
-        optional: true,
-        label: { type: "plain_text", text: "Requirements" },
-        element: { type: "plain_text_input", action_id: "requirements", multiline: true, initial_value: draft.requirements || undefined }
-      },
-      {
-        type: "input",
-        block_id: "target_user_base_block",
-        optional: true,
-        label: { type: "plain_text", text: "Target User Base" },
-        element: { type: "plain_text_input", action_id: "target_user_base", initial_value: draft.target_user_base || undefined }
+        element: {
+          type: "plain_text_input",
+          action_id: "attendees_est",
+          placeholder: { type: "plain_text", text: "e.g. 120" },
+          ...(draft.attendees_est && draft.attendees_est !== "0" ? { initial_value: draft.attendees_est } : {})
+        }
       }
     ]
   };
@@ -792,14 +924,21 @@ async function handleScheduleSubmitData(payload: any) {
   const collected = getScheduleDraft(payload);
   const durationValue = Number(collected.duration_minutes || 0);
   return {
+    // Brief
+    dri_team: collected.dri_team,
     title: collected.title,
+    goals: collected.goals,
+    persona: collected.persona,
+    behaviour: collected.behaviour,
+    core_message: collected.core_message,
+    metrics: collected.metrics,
+    // Scheduling
     trainer_id: collected.trainer_id,
     request_date: collected.request_date,
     start_time: collected.start_time,
     attendees_est: collected.attendees_est || "0",
     duration_minutes: durationValue,
-    requirements: collected.requirements,
-    target_user_base: collected.target_user_base
+    requirements: collected.requirements
   };
 }
 
@@ -815,17 +954,54 @@ function scheduleConfirmModal(data: z.infer<typeof slackWebinarSchema>, trainerN
     blocks: [
       {
         type: "section",
-        text: { type: "mrkdwn", text: "*Please confirm before sending to BP team.*" }
+        text: { type: "mrkdwn", text: "*Please review all details before sending to the BP team.*" }
+      },
+      { type: "divider" },
+      {
+        type: "section",
+        text: { type: "mrkdwn", text: "*📋 Request Brief*" }
       },
       {
         type: "section",
         fields: [
-          { type: "mrkdwn", text: `*Title*\n${data.title}` },
+          { type: "mrkdwn", text: `*DRI Team*\n${data.dri_team}` },
+          { type: "mrkdwn", text: `*Webinar Name*\n${data.title}` }
+        ]
+      },
+      {
+        type: "section",
+        text: { type: "mrkdwn", text: `*Goals*\n${data.goals}` }
+      },
+      {
+        type: "section",
+        fields: [
+          { type: "mrkdwn", text: `*Persona*\n${data.persona}` },
+          { type: "mrkdwn", text: `*Metrics to Drive*\n${data.metrics}` }
+        ]
+      },
+      {
+        type: "section",
+        text: { type: "mrkdwn", text: `*Core Message*\n${data.core_message}` }
+      },
+      ...(data.behaviour
+        ? [{ type: "section", text: { type: "mrkdwn", text: `*Behavioural Change*\n${data.behaviour}` } }]
+        : []),
+      {
+        type: "section",
+        text: { type: "mrkdwn", text: `*Do's and Don'ts*\n${data.requirements}` }
+      },
+      { type: "divider" },
+      {
+        type: "section",
+        text: { type: "mrkdwn", text: "*🗓 Scheduling*" }
+      },
+      {
+        type: "section",
+        fields: [
           { type: "mrkdwn", text: `*Trainer*\n${trainerName}` },
           { type: "mrkdwn", text: `*Start*\n${when}` },
-          { type: "mrkdwn", text: `*Expected attendees*\n${data.attendees_est}` },
           { type: "mrkdwn", text: `*Duration*\n${data.duration_minutes} min` },
-          { type: "mrkdwn", text: `*Target user base*\n${data.target_user_base || "-"}` }
+          { type: "mrkdwn", text: `*Expected Attendees*\n${data.attendees_est}` }
         ]
       }
     ]
@@ -872,9 +1048,17 @@ async function handleScheduleConfirmed(payload: any, parsed: z.infer<typeof slac
       action: "submit_slack_webinar_request",
       metadata: {
         trainer_id: trainer.id,
+        duration_minutes: parsed.duration_minutes,
+        // Brief fields
+        dri_team: parsed.dri_team,
+        goals: parsed.goals,
+        persona: parsed.persona,
+        behaviour: parsed.behaviour || null,
+        core_message: parsed.core_message,
+        metrics: parsed.metrics,
+        // dos_donts stored as requirements for webinar record compat
         requirements: parsed.requirements || null,
-        target_user_base: parsed.target_user_base || null,
-        duration_minutes: parsed.duration_minutes
+        target_user_base: parsed.persona || null
       }
     });
 
@@ -887,7 +1071,10 @@ async function handleScheduleConfirmed(payload: any, parsed: z.infer<typeof slac
         trainerName: requestRow.trainer_name,
         requestedDate: requestRow.requested_date,
         attendees: requestRow.attendees_est,
-        employeeName: requestRow.employee_name
+        employeeName: requestRow.employee_name,
+        driTeam: parsed.dri_team,
+        goals: parsed.goals,
+        metrics: parsed.metrics
       })
     })) as any;
 

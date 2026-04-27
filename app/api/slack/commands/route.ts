@@ -93,15 +93,104 @@ export async function POST(request: Request) {
             channel_id: channelId ?? ""
           }),
           blocks: [
+            // ── Section 1: Brief ─────────────────────────────────────────────
+            {
+              type: "section",
+              text: { type: "mrkdwn", text: "*📋 Request Brief*" }
+            },
+            {
+              type: "input",
+              block_id: "dri_team_block",
+              label: { type: "plain_text", text: "Which Team does the DRI belong to?" },
+              element: {
+                type: "plain_text_input",
+                action_id: "dri_team",
+                placeholder: { type: "plain_text", text: "e.g. Growth, Product, BD" }
+              }
+            },
             {
               type: "input",
               block_id: "title_block",
-              label: { type: "plain_text", text: "Title" },
+              label: { type: "plain_text", text: "Webinar Name (as per campaign comms)" },
               element: {
                 type: "plain_text_input",
                 action_id: "title",
-                placeholder: { type: "plain_text", text: "Webinar title" }
+                placeholder: { type: "plain_text", text: "As it will appear in campaign materials" }
               }
+            },
+            {
+              type: "input",
+              block_id: "goals_block",
+              label: { type: "plain_text", text: "What Goals is this webinar helping to achieve?" },
+              hint: { type: "plain_text", text: "Include clear metrics. Requests without metrics may be deprioritised." },
+              element: {
+                type: "plain_text_input",
+                action_id: "goals",
+                multiline: true,
+                placeholder: { type: "plain_text", text: "State goals and measurable metrics clearly" }
+              }
+            },
+            {
+              type: "input",
+              block_id: "persona_block",
+              label: { type: "plain_text", text: "What is the persona of your target group?" },
+              element: {
+                type: "plain_text_input",
+                action_id: "persona",
+                placeholder: { type: "plain_text", text: "e.g. First-time investors aged 25-35, NAP users" }
+              }
+            },
+            {
+              type: "input",
+              block_id: "behaviour_block",
+              optional: true,
+              label: { type: "plain_text", text: "How is the target group behaving today, and what behavioural change signals success?" },
+              element: {
+                type: "plain_text_input",
+                action_id: "behaviour",
+                multiline: true,
+                placeholder: { type: "plain_text", text: "Describe current behaviour and the desired shift" }
+              }
+            },
+            {
+              type: "input",
+              block_id: "core_message_block",
+              label: { type: "plain_text", text: "What is the core message you are trying to convey?" },
+              element: {
+                type: "plain_text_input",
+                action_id: "core_message",
+                multiline: true,
+                placeholder: { type: "plain_text", text: "The single key takeaway for attendees" }
+              }
+            },
+            {
+              type: "input",
+              block_id: "metrics_block",
+              label: { type: "plain_text", text: "What metrics are you trying to drive with this webinar?" },
+              hint: { type: "plain_text", text: "e.g. UNAP, FNAP, NAP, No of API users, Volume" },
+              element: {
+                type: "plain_text_input",
+                action_id: "metrics",
+                placeholder: { type: "plain_text", text: "List metrics you want to move" }
+              }
+            },
+            {
+              type: "input",
+              block_id: "dos_donts_block",
+              label: { type: "plain_text", text: "Critical Do's and Don'ts for the trainer" },
+              element: {
+                type: "plain_text_input",
+                action_id: "requirements",
+                multiline: true,
+                placeholder: { type: "plain_text", text: "Words, phrases, concepts to use or avoid" }
+              }
+            },
+            // ── Divider ───────────────────────────────────────────────────────
+            { type: "divider" },
+            // ── Section 2: Scheduling ─────────────────────────────────────────
+            {
+              type: "section",
+              text: { type: "mrkdwn", text: "*🗓 Scheduling*" }
             },
             {
               type: "input",
@@ -140,7 +229,7 @@ export async function POST(request: Request) {
             {
               type: "input",
               block_id: "time_block",
-              label: { type: "plain_text", text: "Available Timing" },
+              label: { type: "plain_text", text: "Available Timing (IST)" },
               element: {
                 type: "static_select",
                 action_id: "start_time",
@@ -158,20 +247,6 @@ export async function POST(request: Request) {
                 action_id: "attendees_est",
                 placeholder: { type: "plain_text", text: "e.g. 120" }
               }
-            },
-            {
-              type: "input",
-              block_id: "requirements_block",
-              optional: true,
-              label: { type: "plain_text", text: "Requirements" },
-              element: { type: "plain_text_input", action_id: "requirements", multiline: true }
-            },
-            {
-              type: "input",
-              block_id: "target_user_base_block",
-              optional: true,
-              label: { type: "plain_text", text: "Target User Base" },
-              element: { type: "plain_text_input", action_id: "target_user_base" }
             }
           ]
         }
