@@ -998,7 +998,6 @@ function buildScheduleModal(params: {
           type: "datepicker",
           action_id: "request_date",
           placeholder: { type: "plain_text", text: "Select date" },
-          min_date: new Date().toISOString().slice(0, 10),
           ...(draft.request_date ? { initial_date: draft.request_date } : {})
         }
       },
