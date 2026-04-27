@@ -40,7 +40,6 @@ const slackWebinarSchema = z.object({
   trainer_id: z.string().min(1),
   request_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
   start_time: z.string().regex(/^\d{2}:\d{2}$/),
-  attendees_est: z.coerce.number().int().min(0).default(0),
   duration_minutes: z.coerce.number().int().refine((v) => DURATION_VALUES.includes(v as any), { message: "Duration must be between 30 and 180 minutes." }),
   // dos_donts stored under existing `requirements` key for backward compat
   requirements: z.string().min(1, "Do's and Don'ts are required.")
@@ -91,7 +90,6 @@ function slackErrorField(path: string) {
   if (path === "trainer_id") return "trainer_block";
   if (path === "request_date") return "date_block";
   if (path === "start_time") return "time_block";
-  if (path === "attendees_est") return "attendees_block";
   if (path === "duration_minutes") return "duration_block";
   return "title_block";
 }
@@ -131,7 +129,6 @@ function bpRequestCard(params: {
   topic: string;
   trainerName: string;
   requestedDate: string;
-  attendees: number;
   employeeName: string;
   driTeam?: string;
   goals?: string;
@@ -145,7 +142,6 @@ function bpRequestCard(params: {
         { type: "mrkdwn", text: `*Webinar Name*\n${params.topic}` },
         { type: "mrkdwn", text: `*Trainer*\n${params.trainerName}` },
         { type: "mrkdwn", text: `*Preferred time*\n${formatDate(params.requestedDate)}` },
-        { type: "mrkdwn", text: `*Est. attendees*\n${params.attendees}` },
         { type: "mrkdwn", text: `*Requested by*\n${params.employeeName}` },
         { type: "mrkdwn", text: `*DRI Team*\n${params.driTeam ?? "—"}` }
       ]
@@ -217,7 +213,6 @@ function growthChecklistBlocks(requestRow: any, items: Array<{ item: string; com
         { type: "mrkdwn", text: `*Topic*\n${requestRow.topic}` },
         { type: "mrkdwn", text: `*Trainer*\n${requestRow.trainer_name}` },
         { type: "mrkdwn", text: `*Scheduled*\n${formatDate(requestRow.requested_date)}` },
-        { type: "mrkdwn", text: `*Est. attendees*\n${requestRow.attendees_est}` },
         { type: "mrkdwn", text: `*Request ID*\n\`${requestRow.id}\`` }
       ]
     },
@@ -555,7 +550,6 @@ type ScheduleDraft = {
   request_date: string;
   duration_minutes: string;
   start_time: string;
-  attendees_est: string;
   requirements: string;
 };
 
@@ -692,7 +686,6 @@ function getScheduleDraft(payload: any): ScheduleDraft {
     request_date: getInput(state, "date_block", "request_date")?.selected_date ?? "",
     duration_minutes: getInput(state, "duration_block", "duration_minutes")?.selected_option?.value ?? "",
     start_time: getInput(state, "time_block", "start_time")?.selected_option?.value ?? "",
-    attendees_est: getInput(state, "attendees_block", "attendees_est")?.value ?? "0",
     requirements: getInput(state, "dos_donts_block", "requirements")?.value ?? ""
   };
 }
@@ -872,6 +865,7 @@ function buildScheduleModal(params: {
           type: "datepicker",
           action_id: "request_date",
           placeholder: { type: "plain_text", text: "Select date" },
+          min_date: new Date().toISOString().slice(0, 10),
           ...(draft.request_date ? { initial_date: draft.request_date } : {})
         }
       },
@@ -904,18 +898,6 @@ function buildScheduleModal(params: {
           ...(selectedStartTime ? { initial_option: selectedStartTime } : {})
         }
       },
-      {
-        type: "input",
-        block_id: "attendees_block",
-        optional: true,
-        label: { type: "plain_text", text: "Expected Attendees" },
-        element: {
-          type: "plain_text_input",
-          action_id: "attendees_est",
-          placeholder: { type: "plain_text", text: "e.g. 120" },
-          ...(draft.attendees_est && draft.attendees_est !== "0" ? { initial_value: draft.attendees_est } : {})
-        }
-      }
     ]
   };
 }
@@ -936,7 +918,6 @@ async function handleScheduleSubmitData(payload: any) {
     trainer_id: collected.trainer_id,
     request_date: collected.request_date,
     start_time: collected.start_time,
-    attendees_est: collected.attendees_est || "0",
     duration_minutes: durationValue,
     requirements: collected.requirements
   };
@@ -1000,8 +981,7 @@ function scheduleConfirmModal(data: z.infer<typeof slackWebinarSchema>, trainerN
         fields: [
           { type: "mrkdwn", text: `*Trainer*\n${trainerName}` },
           { type: "mrkdwn", text: `*Start*\n${when}` },
-          { type: "mrkdwn", text: `*Duration*\n${data.duration_minutes} min` },
-          { type: "mrkdwn", text: `*Expected Attendees*\n${data.attendees_est}` }
+          { type: "mrkdwn", text: `*Duration*\n${data.duration_minutes} min` }
         ]
       }
     ]
@@ -1026,7 +1006,7 @@ async function handleScheduleConfirmed(payload: any, parsed: z.infer<typeof slac
         topic: parsed.title,
         trainer_name: trainer.name,
         requested_date: startIso,
-        attendees_est: parsed.attendees_est,
+        attendees_est: 0,
         state: "RAISED",
         employee_slack_id: actorId,
         employee_name: actorName
@@ -1070,7 +1050,6 @@ async function handleScheduleConfirmed(payload: any, parsed: z.infer<typeof slac
         topic: requestRow.topic,
         trainerName: requestRow.trainer_name,
         requestedDate: requestRow.requested_date,
-        attendees: requestRow.attendees_est,
         employeeName: requestRow.employee_name,
         driTeam: parsed.dri_team,
         goals: parsed.goals,

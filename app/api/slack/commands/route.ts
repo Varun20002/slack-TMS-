@@ -207,7 +207,8 @@ export async function POST(request: Request) {
               element: {
                 type: "datepicker",
                 action_id: "request_date",
-                placeholder: { type: "plain_text", text: "Select date" }
+                placeholder: { type: "plain_text", text: "Select date" },
+                min_date: new Date().toISOString().slice(0, 10)
               }
             },
             {
@@ -235,17 +236,6 @@ export async function POST(request: Request) {
                 action_id: "start_time",
                 placeholder: { type: "plain_text", text: "Select trainer, date and duration first" },
                 options: [{ text: { type: "plain_text", text: "No slots loaded yet" }, value: "__unavailable__" }]
-              }
-            },
-            {
-              type: "input",
-              block_id: "attendees_block",
-              optional: true,
-              label: { type: "plain_text", text: "Expected Attendees" },
-              element: {
-                type: "plain_text_input",
-                action_id: "attendees_est",
-                placeholder: { type: "plain_text", text: "e.g. 120" }
               }
             }
           ]
