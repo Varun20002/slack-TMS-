@@ -1301,18 +1301,12 @@ async function handleScheduleModalBlockAction(payload: any) {
   });
 
   try {
-    const result = await slackApi("/views.update", {
+    await slackApi("/views.update", {
       view_id: payload.view.id,
       hash: payload.view.hash,
       view: modalView
     });
-    // #region agent log
-    console.log("[DEBUG-546f3a] RESULT", { actionId, calBlocks: calendarBlocks.length, totalBlocks: modalView?.blocks?.length, ok: result?.ok });
-    // #endregion
   } catch (err: any) {
-    // #region agent log
-    console.log("[DEBUG-546f3a] FAILED", { actionId, calBlocks: calendarBlocks.length, error: err?.message ?? String(err) });
-    // #endregion
     if (err?.message === "hash_conflict") {
       try {
         await slackApi("/views.update", { view_id: payload.view.id, view: modalView });
