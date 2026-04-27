@@ -785,32 +785,6 @@ async function buildAvailabilityCalendar(
   const lastDay = new Date(startDate);
   lastDay.setDate(lastDay.getDate() + 6);
 
-  const navBlocks: any[] = [];
-  if (weekOffset > 0) {
-    navBlocks.push({
-      type: "section",
-      block_id: `cal_nav_prev_block_${weekOffset}`,
-      text: { type: "mrkdwn", text: "◀ Previous week" },
-      accessory: {
-        type: "button",
-        text: { type: "plain_text", text: "◀ Prev Week" },
-        action_id: "cal_nav_prev",
-        value: String(weekOffset - 1)
-      }
-    });
-  }
-  navBlocks.push({
-    type: "section",
-    block_id: `cal_nav_next_block_${weekOffset}`,
-    text: { type: "mrkdwn", text: "Next week ▶" },
-    accessory: {
-      type: "button",
-      text: { type: "plain_text", text: "Next Week ▶" },
-      action_id: "cal_nav_next",
-      value: String(weekOffset + 1)
-    }
-  });
-
   return [
     {
       type: "section",
@@ -823,8 +797,7 @@ async function buildAvailabilityCalendar(
     {
       type: "context",
       elements: [{ type: "mrkdwn", text: "🟩 Available    🔴 Booked" }]
-    },
-    ...navBlocks
+    }
   ];
 }
 
@@ -1326,19 +1299,21 @@ async function handleScheduleModalBlockAction(payload: any) {
   console.log("[DEBUG-546f3a] calendar built", { trainerId: draft.trainer_id, trainerName, weekOffset, calendarBlockCount: calendarBlocks.length });
   // #endregion
 
+  const modalView = buildScheduleModal({
+    draft,
+    trainerOptions,
+    timeOptions,
+    availabilityHint,
+    privateMetadata: payload.view.private_metadata ?? "{}",
+    trainerPreview,
+    calendarBlocks
+  });
+
   try {
     const result = await slackApi("/views.update", {
       view_id: payload.view.id,
       hash: payload.view.hash,
-      view: buildScheduleModal({
-        draft,
-        trainerOptions,
-        timeOptions,
-        availabilityHint,
-        privateMetadata: payload.view.private_metadata ?? "{}",
-        trainerPreview,
-        calendarBlocks
-      })
+      view: modalView
     });
     // #region agent log
     console.log("[DEBUG-546f3a] views.update succeeded", { ok: result?.ok });
@@ -1347,6 +1322,11 @@ async function handleScheduleModalBlockAction(payload: any) {
     // #region agent log
     console.log("[DEBUG-546f3a] views.update FAILED", { error: err?.message ?? String(err) });
     // #endregion
+    if (err?.message === "hash_conflict") {
+      try {
+        await slackApi("/views.update", { view_id: payload.view.id, view: modalView });
+      } catch (_) {}
+    }
   }
 
   return true;
