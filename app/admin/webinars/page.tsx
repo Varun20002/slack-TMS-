@@ -2,9 +2,11 @@ import { PastWebinarsTable } from "@/components/admin/past-webinars-table";
 import { UpcomingWebinarsManager } from "@/components/admin/upcoming-webinars-manager";
 import { WebinarRequestStatus } from "@/components/admin/webinar-request-status";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { autoCompletePastWebinars } from "@/lib/queries";
 import { createClient } from "@/lib/supabase/server";
 
 export default async function AdminWebinarsPage() {
+  await autoCompletePastWebinars();
   const supabase = (await createClient()) as any;
   const now = new Date().toISOString();
 

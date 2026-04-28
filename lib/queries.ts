@@ -1,6 +1,24 @@
 import { createClient } from "@/lib/supabase/server";
 
+export async function autoCompletePastWebinars() {
+  const supabase = (await createClient()) as any;
+  const { error } = await supabase.rpc("auto_complete_past_webinars");
+  if (!error) return;
+  // Fallback if the RPC isn't deployed yet (42883 = undefined function).
+  // Uses webinar_timing alone since we can't add the duration server-side here;
+  // a 60-minute buffer keeps it conservative.
+  if (error.code === "42883" || /auto_complete_past_webinars/i.test(error.message ?? "")) {
+    const cutoffIso = new Date(Date.now() - 60 * 60 * 1000).toISOString();
+    await supabase
+      .from("webinars")
+      .update({ status: "completed" })
+      .eq("status", "upcoming")
+      .lt("webinar_timing", cutoffIso);
+  }
+}
+
 export async function getAdminDashboardData() {
+  await autoCompletePastWebinars();
   const supabase = (await createClient()) as any;
   const nowIso = new Date().toISOString();
 
@@ -37,6 +55,7 @@ export async function getAdminDashboardData() {
 }
 
 export async function getTrainerDashboardData(profileId: string) {
+  await autoCompletePastWebinars();
   const supabase = (await createClient()) as any;
   const nowIso = new Date().toISOString();
 
@@ -84,6 +103,7 @@ export async function getTrainerDashboardData(profileId: string) {
 }
 
 export async function getLeaderboardData() {
+  await autoCompletePastWebinars();
   const supabase = (await createClient()) as any;
   const { data: trainers } = await supabase.from("trainers").select("id, name, base_city, average_rating, webinars(id, status, webinar_metrics(attendees_count, highest_audience_count))");
 

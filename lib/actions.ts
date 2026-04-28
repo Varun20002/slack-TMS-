@@ -12,6 +12,7 @@ import {
   refreshGoogleAccessToken,
   updateGoogleCalendarEvent
 } from "@/lib/google-calendar";
+import { autoCompletePastWebinars } from "@/lib/queries";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 import { slackApi } from "@/lib/slack";
@@ -788,6 +789,8 @@ export async function uploadRatingsCsvAction(formData: FormData): Promise<Action
 
   const grid = gridParse.data ?? [];
   const surveyHeaderIndex = findSurveyHeaderIndex(grid);
+
+  await autoCompletePastWebinars();
 
   const supabase = (await createClient()) as any;
   const { data: selectedWebinar, error: selectedWebinarError } = await supabase

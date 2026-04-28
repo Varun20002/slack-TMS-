@@ -288,6 +288,24 @@ $$;
 
 grant execute on function public.current_trainer_id() to authenticated;
 
+create or replace function public.auto_complete_past_webinars()
+returns integer
+language sql
+security definer
+set search_path = public
+as $$
+  with promoted as (
+    update public.webinars
+    set status = 'completed'
+    where status = 'upcoming'
+      and webinar_timing + make_interval(mins => coalesce(duration_minutes, 60)) < now()
+    returning 1
+  )
+  select count(*)::int from promoted;
+$$;
+
+grant execute on function public.auto_complete_past_webinars() to authenticated, service_role;
+
 create or replace function public.compute_success_rate(reg integer, att integer, first_ft integer)
 returns numeric
 language sql

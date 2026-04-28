@@ -231,3 +231,30 @@ Additional columns on `webinars` for traceability:
 - `slack_requester_name`
 
 Run the latest [`supabase/schema.sql`](/Users/debjit.saha/Documents/TMS/supabase/schema.sql) to apply these integration changes.
+
+## Auto-completing past webinars
+
+Webinar status (`upcoming` / `completed` / `cancelled`) is **lazy-promoted** at read time
+instead of relying on a cron job. A SQL function `public.auto_complete_past_webinars()`
+flips any `'upcoming'` webinar to `'completed'` once `webinar_timing + duration_minutes < now()`.
+It is invoked automatically from:
+
+- `getAdminDashboardData()`, `getTrainerDashboardData()`, `getLeaderboardData()` in [`lib/queries.ts`](lib/queries.ts)
+- The admin webinars page ([`app/admin/webinars/page.tsx`](app/admin/webinars/page.tsx))
+- `uploadRatingsCsvAction` in [`lib/actions.ts`](lib/actions.ts) (so a webinar that just ended can immediately accept a CSV)
+
+### One-time deploy step
+
+Apply the new function in your Supabase project after pulling these changes. Either:
+
+```bash
+# Re-run the full schema (safe; uses CREATE OR REPLACE for the function)
+supabase db reset
+```
+
+…or paste only the `auto_complete_past_webinars` block from
+[`supabase/schema.sql`](supabase/schema.sql) into the Supabase SQL editor and run it once.
+
+If the function isn't deployed yet, the helper falls back to a best-effort
+client-side update (treating webinars older than 60 minutes as completed) so the
+app still works during rollout.
