@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { BarChart3, CalendarClock, LayoutDashboard, Settings2, Users, Video } from "lucide-react";
+import { BarChart3, CalendarClock, LayoutDashboard, UserCircle, Users, Video } from "lucide-react";
 import { usePathname } from "next/navigation";
 
 import { LogoutButton } from "@/components/layout/logout-button";
@@ -23,7 +23,7 @@ const trainerNav: NavItem[] = [
   { href: "/trainer/webinars", label: "Webinars", icon: Video },
   { href: "/trainer/availability", label: "My Schedule", icon: CalendarClock },
   { href: "/trainer/leaderboard", label: "Leaderboard", icon: BarChart3 },
-  { href: "/trainer/profile", label: "Profile", icon: Settings2 }
+  { href: "/trainer/profile", label: "Profile", icon: UserCircle }
 ];
 
 export function AppShell({

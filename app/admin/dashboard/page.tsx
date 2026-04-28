@@ -2,16 +2,17 @@ import Link from "next/link";
 import { endOfWeek, startOfWeek } from "date-fns";
 
 import { CsvUploadForm } from "@/components/admin/csv-upload-form";
+import { GrowthStatCard } from "@/components/layout/growth-stat-card";
 import { StatCard } from "@/components/layout/stat-card";
 import { WebinarCalendar } from "@/components/shared/webinar-calendar";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { getAdminDashboardData, getLeaderboardData } from "@/lib/queries";
+import { getAdminDashboardData } from "@/lib/queries";
 import { formatDate } from "@/lib/utils";
 
 export default async function AdminDashboardPage() {
-  const [data, leaderboard] = await Promise.all([getAdminDashboardData(), getLeaderboardData()]);
+  const data = await getAdminDashboardData();
 
   const completedWithoutCsv = data.webinars.filter(
     (webinar) => webinar.status === "completed" && !data.csvRatedWebinarIds.includes(webinar.id)
@@ -32,7 +33,29 @@ export default async function AdminDashboardPage() {
     })
     .sort((a, b) => new Date(a.webinar_timing).getTime() - new Date(b.webinar_timing).getTime());
 
-  const topTrainerName = leaderboard[0]?.name ?? "—";
+  const now = new Date();
+  const thisMonthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+  const nextMonthStart = new Date(now.getFullYear(), now.getMonth() + 1, 1);
+  const lastMonthStart = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+
+  const completedWebinars = (data.webinars as any[]).filter((w) => w.status === "completed");
+  const thisMonthCount = completedWebinars.filter((w) => {
+    const t = new Date(w.webinar_timing).getTime();
+    return t >= thisMonthStart.getTime() && t < nextMonthStart.getTime();
+  }).length;
+  const lastMonthCount = completedWebinars.filter((w) => {
+    const t = new Date(w.webinar_timing).getTime();
+    return t >= lastMonthStart.getTime() && t < thisMonthStart.getTime();
+  }).length;
+
+  const growthPct =
+    lastMonthCount === 0
+      ? thisMonthCount > 0
+        ? 100
+        : 0
+      : Math.round(((thisMonthCount - lastMonthCount) / lastMonthCount) * 100);
+  const growthDirection: "up" | "down" | "flat" =
+    thisMonthCount > lastMonthCount ? "up" : thisMonthCount < lastMonthCount ? "down" : "flat";
 
   const events = data.webinars.map((webinar: any) => {
     const start = new Date(webinar.webinar_timing);
@@ -54,7 +77,12 @@ export default async function AdminDashboardPage() {
         <StatCard label="Total Trainers" value={data.stats.totalTrainers} />
         <StatCard label="Upcoming Webinars" value={data.stats.upcomingCount} />
         <StatCard label="Completed Webinars" value={data.stats.completedCount} />
-        <StatCard label="Rank #1 Trainer" value={topTrainerName} />
+        <GrowthStatCard
+          label="Webinar Growth (MoM)"
+          percent={growthPct}
+          direction={growthDirection}
+          hint={`${thisMonthCount} this month vs ${lastMonthCount} last month`}
+        />
       </div>
 
       <div className="grid gap-4 xl:grid-cols-[1.3fr_1fr]">
@@ -110,6 +138,7 @@ export default async function AdminDashboardPage() {
           title="Webinar Calendar"
           description="All scheduled webinars appear here automatically."
           interactiveDateDetails
+          detailHrefBase="/admin/webinars"
         />
       </div>
     </div>

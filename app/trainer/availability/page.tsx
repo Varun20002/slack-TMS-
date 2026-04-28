@@ -62,6 +62,7 @@ export default async function TrainerAvailabilityPage() {
         events={events}
         title="My Webinar Calendar"
         description="Webinars assigned to you appear here automatically."
+        detailHrefBase="/trainer/webinars"
       />
     </div>
   );

@@ -71,6 +71,7 @@ export async function getTrainerDashboardData(profileId: string) {
     past,
     badges: badges ?? [],
     incentives: incentives ?? [],
+    leaderboard,
     stats: {
       registrations,
       attendees,

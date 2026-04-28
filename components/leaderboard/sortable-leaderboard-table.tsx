@@ -5,6 +5,7 @@ import { useMemo, useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { cn } from "@/lib/utils";
 
 type LeaderboardRow = {
   id: string;
@@ -26,10 +27,12 @@ const SORT_FIELDS: Array<{ key: SortKey; label: string }> = [
 
 export function SortableLeaderboardTable({
   rows,
-  showCity = false
+  showCity = false,
+  highlightTrainerId
 }: {
   rows: LeaderboardRow[];
   showCity?: boolean;
+  highlightTrainerId?: string;
 }) {
   const [sortKey, setSortKey] = useState<SortKey>("averageRating");
   const [direction, setDirection] = useState<"asc" | "desc">("desc");
@@ -84,7 +87,10 @@ export function SortableLeaderboardTable({
       </TableHeader>
       <TableBody>
         {sortedRows.map((row, index) => (
-          <TableRow key={row.id}>
+          <TableRow
+            key={row.id}
+            className={cn(highlightTrainerId === row.id && "border-l-2 border-primary bg-muted/40")}
+          >
             <TableCell>{index + 1}</TableCell>
             <TableCell>{row.name}</TableCell>
             {showCity ? <TableCell>{row.city}</TableCell> : null}

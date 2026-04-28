@@ -2,6 +2,7 @@
 
 import { addMonths, endOfMonth, endOfWeek, format, isSameDay, isSameMonth, startOfMonth, startOfWeek, subMonths } from "date-fns";
 import { ChevronLeft, ChevronRight, X } from "lucide-react";
+import Link from "next/link";
 import { useMemo, useState } from "react";
 
 import { Button } from "@/components/ui/button";
@@ -22,13 +23,17 @@ export function WebinarCalendar({
   events,
   title,
   description,
-  interactiveDateDetails = false
+  interactiveDateDetails = false,
+  detailHrefBase
 }: {
   events: WebinarCalendarEvent[];
   title: string;
   description: string;
   interactiveDateDetails?: boolean;
+  detailHrefBase?: string;
 }) {
+  const buildDetailHref = (eventId: string) =>
+    detailHrefBase ? `${detailHrefBase.replace(/\/$/, "")}/${eventId}` : null;
   const [currentMonth, setCurrentMonth] = useState(new Date());
   const [selectedDate, setSelectedDate] = useState<Date | null>(null);
 
@@ -96,23 +101,42 @@ export function WebinarCalendar({
               >
                 <p className="mb-2 text-xs font-semibold">{format(day, "d")}</p>
                 <div className="space-y-1">
-                  {dayEvents.slice(0, 3).map((event) => (
-                    <div
-                      key={event.id}
-                      className={cn(
-                        "block rounded-md px-2 py-1 text-[11px] leading-tight",
-                        event.status === "cancelled"
-                          ? "bg-destructive/15 text-destructive"
-                          : event.status === "completed"
-                            ? "bg-muted text-foreground"
-                            : "bg-primary/15 text-primary"
-                      )}
-                    >
-                      <p className="truncate font-medium">{event.title}</p>
-                      <p className="truncate opacity-80">{formatDate(event.start)}</p>
-                      {event.trainerName ? <p className="truncate opacity-80">{event.trainerName}</p> : null}
-                    </div>
-                  ))}
+                  {dayEvents.slice(0, 3).map((event) => {
+                    const href = buildDetailHref(event.id);
+                    const tileClassName = cn(
+                      "block rounded-md px-2 py-1 text-[11px] leading-tight transition",
+                      event.status === "cancelled"
+                        ? "bg-destructive/15 text-destructive"
+                        : event.status === "completed"
+                          ? "bg-muted text-foreground"
+                          : "bg-primary/15 text-primary",
+                      href && "cursor-pointer hover:ring-1 hover:ring-primary/40"
+                    );
+                    const tileContent = (
+                      <>
+                        <p className="truncate font-medium">{event.title}</p>
+                        <p className="truncate opacity-80">{formatDate(event.start)}</p>
+                        {event.trainerName ? <p className="truncate opacity-80">{event.trainerName}</p> : null}
+                      </>
+                    );
+                    if (href) {
+                      return (
+                        <Link
+                          key={event.id}
+                          href={href}
+                          onClick={(clickEvent) => clickEvent.stopPropagation()}
+                          className={tileClassName}
+                        >
+                          {tileContent}
+                        </Link>
+                      );
+                    }
+                    return (
+                      <div key={event.id} className={tileClassName}>
+                        {tileContent}
+                      </div>
+                    );
+                  })}
                   {dayEvents.length > 3 ? <p className="text-[11px] text-muted-foreground">+{dayEvents.length - 3} more</p> : null}
                 </div>
               </div>
@@ -164,16 +188,21 @@ export function WebinarCalendar({
                         {format(start, "p")} - {format(end, "p")} ({durationMinutes} min)
                       </p>
                       {event.trainerName ? <p className="text-sm text-muted-foreground">Trainer: {event.trainerName}</p> : null}
-                      <div className="mt-3">
+                      <div className="mt-3 flex flex-wrap gap-2">
+                        {buildDetailHref(event.id) ? (
+                          <Button type="button" size="sm" variant="outline" asChild>
+                            <Link href={buildDetailHref(event.id)!}>View details</Link>
+                          </Button>
+                        ) : null}
                         {event.googleLink ? (
                           <Button type="button" size="sm" asChild>
                             <a href={event.googleLink} target="_blank" rel="noreferrer">
                               Add to Calendar
                             </a>
                           </Button>
-                        ) : (
+                        ) : !buildDetailHref(event.id) ? (
                           <p className="text-xs text-muted-foreground">Calendar link not available.</p>
-                        )}
+                        ) : null}
                       </div>
                     </div>
                   );

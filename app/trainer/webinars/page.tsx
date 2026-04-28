@@ -1,3 +1,4 @@
+import { buttonVariants } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { TimeRemainingBadge } from "@/components/shared/time-remaining-badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -25,7 +26,7 @@ export default async function TrainerWebinarsPage() {
                 <TableHead>Title</TableHead>
                 <TableHead>Timing</TableHead>
                 <TableHead>Remaining</TableHead>
-                <TableHead>Target users</TableHead>
+                <TableHead>Joining Link</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -36,7 +37,20 @@ export default async function TrainerWebinarsPage() {
                   <TableCell>
                     <TimeRemainingBadge targetIso={item.webinar_timing} />
                   </TableCell>
-                  <TableCell>{item.target_user_base ?? "-"}</TableCell>
+                  <TableCell>
+                    {item.pre_webinar_link ? (
+                      <a
+                        href={item.pre_webinar_link}
+                        target="_blank"
+                        rel="noreferrer"
+                        className={buttonVariants({ size: "sm" })}
+                      >
+                        Join
+                      </a>
+                    ) : (
+                      <span className="text-muted-foreground">Not set yet</span>
+                    )}
+                  </TableCell>
                 </TableRow>
               ))}
             </TableBody>

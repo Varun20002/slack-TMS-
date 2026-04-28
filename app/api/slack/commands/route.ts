@@ -207,7 +207,8 @@ export async function POST(request: Request) {
               element: {
                 type: "datepicker",
                 action_id: "request_date",
-                placeholder: { type: "plain_text", text: "Select date" }
+                placeholder: { type: "plain_text", text: "Select date" },
+                min_date: new Date().toISOString().slice(0, 10)
               }
             },
             {
