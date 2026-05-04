@@ -22,15 +22,9 @@ export async function GET() {
 }
 
 export async function POST(request: Request) {
-  const t0 = Date.now();
   const rawBody = await request.text();
-  const sigOk = verifySlackSignature(request, rawBody);
 
-  // #region agent log
-  console.error("[DBG-546f3a] entry", JSON.stringify({sigOk,hasSigningSecret:Boolean(process.env.SLACK_SIGNING_SECRET),hasBotToken:Boolean(process.env.SLACK_BOT_TOKEN),botTokenPrefix:(process.env.SLACK_BOT_TOKEN||'').slice(0,5),bodyLen:rawBody.length,host:request.headers.get('host')||null}));
-  // #endregion
-
-  if (!sigOk) {
+  if (!verifySlackSignature(request, rawBody)) {
     return NextResponse.json(
       {
         response_type: "ephemeral",
@@ -45,11 +39,6 @@ export async function POST(request: Request) {
   const userId = form.get("user_id");
   const userName = form.get("user_name");
   const channelId = form.get("channel_id");
-  const command = form.get("command");
-
-  // #region agent log
-  console.error("[DBG-546f3a] form_parsed", JSON.stringify({command,hasTriggerId:Boolean(triggerId),hasUserId:Boolean(userId),elapsedMs:Date.now()-t0}));
-  // #endregion
 
   if (!triggerId || !userId) {
     return NextResponse.json({ ok: false, message: "Missing Slack trigger context." }, { status: 200 });
@@ -79,10 +68,6 @@ export async function POST(request: Request) {
       console.error("Failed to preload trainer options for Slack modal", err);
     }
 
-    // #region agent log
-    console.error("[DBG-546f3a] before_views_open", JSON.stringify({trainerOptionCount:trainerOptions.length,elapsedMs:Date.now()-t0}));
-    // #endregion
-
     const trainerElement =
       trainerOptions.length > 0
         ? {
@@ -98,11 +83,7 @@ export async function POST(request: Request) {
             min_query_length: 0
           };
 
-    const viewsOpenStart = Date.now();
-    let viewsOpenResult: any = null;
-    let viewsOpenError: string | null = null;
-    try {
-      viewsOpenResult = await slackApi("/views.open", {
+    await slackApi("/views.open", {
       trigger_id: triggerId,
       view: {
         type: "modal",
@@ -264,17 +245,8 @@ export async function POST(request: Request) {
         ]
       }
     });
-    } catch (innerErr: any) {
-      viewsOpenError = innerErr?.message || String(innerErr);
-    }
-
-    // #region agent log
-    console.error("[DBG-546f3a] after_views_open", JSON.stringify({ok:viewsOpenResult?.ok??null,error:viewsOpenError,viewsOpenMs:Date.now()-viewsOpenStart,totalElapsedMs:Date.now()-t0}));
-    // #endregion
-  } catch (err: any) {
-    // #region agent log
-    console.error("[DBG-546f3a] outer_catch", JSON.stringify({error:err?.message||String(err),stack:(err?.stack||'').split('\n').slice(0,3).join(' | '),totalElapsedMs:Date.now()-t0}));
-    // #endregion
+  } catch (err) {
+    console.error("Failed to open Slack scheduling modal", err);
   }
 
   return new NextResponse("", { status: 200 });
