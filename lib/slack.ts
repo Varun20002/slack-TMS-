@@ -52,9 +52,13 @@ export async function slackApi(path: string, payload: Record<string, unknown>, o
     signal: controller.signal
   }).finally(() => clearTimeout(timeout));
 
-  const json = (await response.json()) as { ok: boolean; error?: string };
+  const json = (await response.json()) as { ok: boolean; error?: string; response_metadata?: { messages?: string[] } };
   if (!json.ok) {
-    throw new Error(json.error || `Slack API error for ${path}`);
+    // #region agent log
+    console.log("[DBG-546f3a] slack_api_not_ok", JSON.stringify({path,error:json.error||null,messages:json.response_metadata?.messages||null,httpStatus:response.status}));
+    // #endregion
+    const msgs = json.response_metadata?.messages?.join(" | ");
+    throw new Error(`${json.error || `Slack API error for ${path}`}${msgs ? ` :: ${msgs}` : ""}`);
   }
   return json;
 }
