@@ -920,10 +920,10 @@ async function buildAvailabilityCalendar(
       type: "section",
       text: { type: "mrkdwn", text: `*📅  ${trainerName} — ${formatDateRange(startDate, lastDay)}*` }
     },
-    {
-      type: "section",
-      text: { type: "mrkdwn", text: lines.join("\n") }
-    },
+    ...lines.map((line) => ({
+      type: "section" as const,
+      text: { type: "mrkdwn" as const, text: line }
+    })),
     {
       type: "context",
       elements: [{ type: "mrkdwn", text: "🟩 Available    🔴 Booked" }]
