@@ -27,7 +27,7 @@ export async function POST(request: Request) {
   const sigOk = verifySlackSignature(request, rawBody);
 
   // #region agent log
-  console.log("[DBG-546f3a] entry", JSON.stringify({sigOk,hasSigningSecret:Boolean(process.env.SLACK_SIGNING_SECRET),hasBotToken:Boolean(process.env.SLACK_BOT_TOKEN),botTokenPrefix:(process.env.SLACK_BOT_TOKEN||'').slice(0,5),bodyLen:rawBody.length,host:request.headers.get('host')||null}));
+  console.error("[DBG-546f3a] entry", JSON.stringify({sigOk,hasSigningSecret:Boolean(process.env.SLACK_SIGNING_SECRET),hasBotToken:Boolean(process.env.SLACK_BOT_TOKEN),botTokenPrefix:(process.env.SLACK_BOT_TOKEN||'').slice(0,5),bodyLen:rawBody.length,host:request.headers.get('host')||null}));
   // #endregion
 
   if (!sigOk) {
@@ -48,7 +48,7 @@ export async function POST(request: Request) {
   const command = form.get("command");
 
   // #region agent log
-  console.log("[DBG-546f3a] form_parsed", JSON.stringify({command,hasTriggerId:Boolean(triggerId),hasUserId:Boolean(userId),elapsedMs:Date.now()-t0}));
+  console.error("[DBG-546f3a] form_parsed", JSON.stringify({command,hasTriggerId:Boolean(triggerId),hasUserId:Boolean(userId),elapsedMs:Date.now()-t0}));
   // #endregion
 
   if (!triggerId || !userId) {
@@ -80,7 +80,7 @@ export async function POST(request: Request) {
     }
 
     // #region agent log
-    console.log("[DBG-546f3a] before_views_open", JSON.stringify({trainerOptionCount:trainerOptions.length,elapsedMs:Date.now()-t0}));
+    console.error("[DBG-546f3a] before_views_open", JSON.stringify({trainerOptionCount:trainerOptions.length,elapsedMs:Date.now()-t0}));
     // #endregion
 
     const trainerElement =
@@ -231,7 +231,7 @@ export async function POST(request: Request) {
               type: "datepicker",
               action_id: "request_date",
               placeholder: { type: "plain_text", text: "Select date" },
-              min_date: new Date().toISOString().slice(0, 10)
+              initial_date: new Date().toISOString().slice(0, 10)
             }
           },
           {
@@ -269,7 +269,7 @@ export async function POST(request: Request) {
     }
 
     // #region agent log
-    console.log("[DBG-546f3a] after_views_open", JSON.stringify({ok:viewsOpenResult?.ok??null,error:viewsOpenError,viewsOpenMs:Date.now()-viewsOpenStart,totalElapsedMs:Date.now()-t0}));
+    console.error("[DBG-546f3a] after_views_open", JSON.stringify({ok:viewsOpenResult?.ok??null,error:viewsOpenError,viewsOpenMs:Date.now()-viewsOpenStart,totalElapsedMs:Date.now()-t0}));
     // #endregion
   } catch (err: any) {
     // #region agent log

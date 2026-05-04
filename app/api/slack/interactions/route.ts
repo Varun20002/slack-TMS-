@@ -1351,6 +1351,15 @@ async function handleScheduleSubmit(payload: any) {
     };
   }
 
+  const todayIst = new Date(new Date().toLocaleString("en-US", { timeZone: "Asia/Kolkata" }));
+  const todayIstStr = `${todayIst.getFullYear()}-${String(todayIst.getMonth() + 1).padStart(2, "0")}-${String(todayIst.getDate()).padStart(2, "0")}`;
+  if (parsed.data.request_date < todayIstStr) {
+    return {
+      response_action: "errors",
+      errors: { date_block: "Please select a date in the future." }
+    };
+  }
+
   const { data: trainer } = await supabase.from("trainers").select("id, name").eq("id", parsed.data.trainer_id).maybeSingle();
   if (!trainer) {
     return {
