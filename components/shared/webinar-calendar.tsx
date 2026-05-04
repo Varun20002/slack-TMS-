@@ -19,14 +19,23 @@ type WebinarCalendarEvent = {
   googleLink?: string | null;
 };
 
+type AvailabilitySlot = {
+  id: string;
+  day_of_week: number;
+  start_time: string;
+  end_time: string;
+};
+
 export function WebinarCalendar({
   events,
+  availabilitySlots = [],
   title,
   description,
   interactiveDateDetails = false,
   detailHrefBase
 }: {
   events: WebinarCalendarEvent[];
+  availabilitySlots?: AvailabilitySlot[];
   title: string;
   description: string;
   interactiveDateDetails?: boolean;
@@ -101,6 +110,16 @@ export function WebinarCalendar({
               >
                 <p className="mb-2 text-xs font-semibold">{format(day, "d")}</p>
                 <div className="space-y-1">
+                  {availabilitySlots
+                    .filter((slot) => slot.day_of_week === day.getDay())
+                    .map((slot) => (
+                      <div
+                        key={`${day.toISOString()}-${slot.id}`}
+                        className="rounded-md bg-emerald-500/15 px-2 py-1 text-[11px] font-medium leading-tight text-emerald-700 dark:text-emerald-400"
+                      >
+                        {String(slot.start_time).slice(0, 5)}–{String(slot.end_time).slice(0, 5)}
+                      </div>
+                    ))}
                   {dayEvents.slice(0, 3).map((event) => {
                     const href = buildDetailHref(event.id);
                     const tileClassName = cn(

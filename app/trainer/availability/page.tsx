@@ -60,8 +60,9 @@ export default async function TrainerAvailabilityPage() {
       </Card>
       <WebinarCalendar
         events={events}
+        availabilitySlots={slots ?? []}
         title="My Webinar Calendar"
-        description="Webinars assigned to you appear here automatically."
+        description="Green blocks show your available windows. Coloured tiles are scheduled sessions."
         detailHrefBase="/trainer/webinars"
       />
     </div>
