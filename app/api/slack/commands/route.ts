@@ -272,9 +272,8 @@ export async function POST(request: Request) {
     console.log("[DBG-546f3a] after_views_open", JSON.stringify({ok:viewsOpenResult?.ok??null,error:viewsOpenError,viewsOpenMs:Date.now()-viewsOpenStart,totalElapsedMs:Date.now()-t0}));
     // #endregion
   } catch (err: any) {
-    console.error("Failed to open Slack scheduling modal", err);
     // #region agent log
-    console.log("[DBG-546f3a] outer_catch", JSON.stringify({error:err?.message||String(err),totalElapsedMs:Date.now()-t0}));
+    console.error("[DBG-546f3a] outer_catch", JSON.stringify({error:err?.message||String(err),stack:(err?.stack||'').split('\n').slice(0,3).join(' | '),totalElapsedMs:Date.now()-t0}));
     // #endregion
   }
 
